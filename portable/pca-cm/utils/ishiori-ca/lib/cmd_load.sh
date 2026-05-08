@@ -25,6 +25,18 @@ cmd_load() {
         exit 1
     fi
 
+    echo "Clearing $ROOT_CA_DIR..."
+    rm -rf \
+        "${ROOT_CA_DIR}/certs" \
+        "${ROOT_CA_DIR}/crl" \
+        "${ROOT_CA_DIR}/newcerts" \
+        "${ROOT_CA_DIR}/private" \
+        "${ROOT_CA_DIR}/index.txt" \
+        "${ROOT_CA_DIR}/index.txt.attr" \
+        "${ROOT_CA_DIR}/serial" \
+        "${ROOT_CA_DIR}/crlnumber" \
+        "${ROOT_CA_DIR}/openssl.cnf"
+
     echo "Creating directory structure..."
     mkdir -p \
         "${ROOT_CA_DIR}/certs" \
@@ -42,6 +54,7 @@ cmd_load() {
         "root+crlnumber:crlnumber"
         "root+openssl.cnf:openssl.cnf"
         "certs+ca.cert.pem:certs/ca.cert.pem"
+        "crl+ca.crl.pem:crl/ca.crl.pem"
     )
 
     for entry in "${public_files[@]}"; do

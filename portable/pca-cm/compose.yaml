@@ -1,14 +1,13 @@
 services:
   # run with
-  # $ UID=$(id -u) GID=$(id -g) docker compose run pca-cm
+  # $ PUID=$(id -u) PGID=$(id -g) docker compose run pca-cm
   pca-cm:
     build: .
-    user: "${UID}:${GID}"
-    working_dir: /data/root-ca
+    user: "${PUID}:${PGID}"
     container_name: app
     stdin_open: true
     tty: true
-    command: /bin/bash
+    command: bash -c "mkdir -p /data/root-ca && cd /data/root-ca && exec bash"
     volumes:
       - ./data:/data
       - ./public:/public

@@ -17,6 +17,10 @@ cmd_save() {
 
     local had_error=0
 
+    echo "Clearing output directories..."
+    rm -f "${PUBLIC_DIR}/"*
+    rm -f "${PRIVATE_ENC_DIR}/"*
+
     echo "Saving public files..."
 
     local public_files=(
@@ -26,6 +30,7 @@ cmd_save() {
         "crlnumber:root+crlnumber"
         "openssl.cnf:root+openssl.cnf"
         "certs/ca.cert.pem:certs+ca.cert.pem"
+        "crl/ca.crl.pem:crl+ca.crl.pem"
     )
 
     for entry in "${public_files[@]}"; do

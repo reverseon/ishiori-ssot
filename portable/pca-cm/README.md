@@ -13,7 +13,7 @@ Private CA Certificate Manager. A Dockerized bash CLI for managing a self-hosted
 ## Usage
 
 ```bash
-UID=$(id -u) GID=$(id -g) docker compose run pca-cm
+PUID=$(id -u) PGID=$(id -g) docker compose run pca-cm
 ```
 
 Inside the container, use `ishiori-ca`:
