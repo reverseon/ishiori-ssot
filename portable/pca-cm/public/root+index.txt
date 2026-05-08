@@ -6,3 +6,9 @@ R	270518171920Z	260508172433Z,cessationOfOperation	1004	unknown	/C=JP/ST=Shinono
 R	270518173255Z	260508173357Z,cessationOfOperation	1005	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test3.ishiori.net/emailAddress=kanri@ishiori.net
 R	270518173402Z	260508173431Z,cessationOfOperation	1006	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test3.ishiori.net/emailAddress=kanri@ishiori.net
 R	260511175134Z	260508191609Z,cessationOfOperation	1007	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test4.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518192256Z	260508193841Z,cessationOfOperation	1008	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=hi.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518192752Z	260508193844Z,cessationOfOperation	1009	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=hi2.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518193001Z	260508193847Z,cessationOfOperation	100A	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=hi3.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518193404Z	260508193849Z,cessationOfOperation	100B	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=hi5.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518193604Z	260508193854Z,cessationOfOperation	100C	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=hi6.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518193656Z	260508193856Z,cessationOfOperation	100D	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=debug.ishiori.net/emailAddress=kanri@ishiori.net

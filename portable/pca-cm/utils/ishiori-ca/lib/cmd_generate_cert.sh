@@ -116,18 +116,11 @@ cmd_generate_cert() {
         san_value="${san_type}:${cn}"
 
         ext_file="/tmp/${rand}.ext"
-        cat > "$ext_file" <<EOF
-[ server_cert_san ]
-basicConstraints = CA:FALSE
-nsCertType = server
-nsComment = "Ishiori.NET Server Certificate"
-subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid,issuer:always
-keyUsage = critical, digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = ${san_value}
-EOF
-        sign_cmd+=(-extfile "$ext_file" -extensions server_cert_san)
+        local cnf="${ROOT_CA_DIR}/openssl.cnf"
+        printf '[ server_cert_san ]\n' > "$ext_file"
+        awk '/^\[ server_cert \]/{f=1;next} /^\[/{f=0} f && /[^[:space:]]/{print}' "$cnf" >> "$ext_file"
+        printf 'subjectAltName = %s\n' "$san_value" >> "$ext_file"
+sign_cmd+=(-extfile "$ext_file" -extensions server_cert_san)
     else
         sign_cmd+=(-extensions "$mode")
     fi
