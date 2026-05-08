@@ -1,0 +1,8 @@
+R	260518131842Z	260508172442Z,cessationOfOperation	1000	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=Test Cert
+R	260518132830Z	260508134048Z	1001	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=Test To Be Revoked
+R	260518134317Z	260508134447Z,cessationOfOperation	1002	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=Test To Be Revoked
+R	270518170021Z	260508172424Z,cessationOfOperation	1003	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test2.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518171920Z	260508172433Z,cessationOfOperation	1004	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test3.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518173255Z	260508173357Z,cessationOfOperation	1005	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test3.ishiori.net/emailAddress=kanri@ishiori.net
+R	270518173402Z	260508173431Z,cessationOfOperation	1006	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test3.ishiori.net/emailAddress=kanri@ishiori.net
+V	260511175134Z		1007	unknown	/C=JP/ST=Shinonome/O=Ishiori.NET/OU=Ishiori.NET Service Management/CN=test4.ishiori.net/emailAddress=kanri@ishiori.net

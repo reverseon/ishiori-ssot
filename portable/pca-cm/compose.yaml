@@ -1,0 +1,15 @@
+services:
+  # run with
+  # $ UID=$(id -u) GID=$(id -g) docker compose run pca-cm
+  pca-cm:
+    build: .
+    user: "${UID}:${GID}"
+    working_dir: /data/root-ca
+    container_name: app
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    volumes:
+      - ./data:/data
+      - ./public:/public
+      - ./private-encrypted:/private-encrypted
