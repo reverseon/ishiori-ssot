@@ -11,9 +11,12 @@ cmd_save() {
         exit 1
     fi
 
-    local passphrase
-    read -r -s -p "GPG passphrase: " passphrase
-    echo
+    local recipient
+    read -r -p "age public key (age1...): " recipient
+    if [[ -z "$recipient" ]]; then
+        echo "Error: public key cannot be empty"
+        exit 1
+    fi
 
     local had_error=0
 
@@ -56,14 +59,12 @@ cmd_save() {
         found_keys=1
         local filename
         filename=$(basename "$key_file")
-        local dst="${PRIVATE_ENC_DIR}/private+${filename}.asc"
+        local dst="${PRIVATE_ENC_DIR}/private+${filename}.age"
 
-        gpg --batch --yes --symmetric --armor \
-            --pinentry-mode loopback \
-            --passphrase "$passphrase" \
+        age --recipient "$recipient" --armor \
             --output "$dst" \
             "$key_file" \
-            && echo "  Encrypted: private+${filename}.asc" \
+            && echo "  Encrypted: private+${filename}.age" \
             || { echo "  Error: failed to encrypt $filename"; had_error=1; }
     done
 

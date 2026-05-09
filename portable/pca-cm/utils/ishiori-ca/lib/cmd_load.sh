@@ -11,9 +11,19 @@ cmd_load() {
         exit 1
     fi
 
-    local passphrase
-    read -r -s -p "GPG passphrase: " passphrase
+    local secret_key
+    read -r -s -p "age secret key (AGE-SECRET-KEY-1...): " secret_key
     echo
+    if [[ -z "$secret_key" ]]; then
+        echo "Error: secret key cannot be empty"
+        exit 1
+    fi
+
+    local identity_path
+    identity_path=$(mktemp /tmp/age-identity-XXXXXX)
+    chmod 600 "$identity_path"
+    echo "$secret_key" > "$identity_path"
+    trap 'rm -f "$identity_path"' EXIT
 
     local had_error=0
 
@@ -80,18 +90,17 @@ cmd_load() {
     echo "Decrypting private keys..."
 
     local found_keys=0
-    for enc_file in "${PRIVATE_ENC_DIR}/private+"*.key.pem.asc; do
+    for enc_file in "${PRIVATE_ENC_DIR}/private+"*.key.pem.age; do
         [[ -f "$enc_file" ]] || continue
         found_keys=1
         local basename
         basename=$(basename "$enc_file")
         local filename="${basename#private+}"   # strip "private+" prefix
-        filename="${filename%.asc}"             # strip ".asc" suffix
+        filename="${filename%.age}"             # strip ".age" suffix
         local dst="${ROOT_CA_DIR}/private/${filename}"
 
-        gpg --batch --yes --decrypt \
-            --pinentry-mode loopback \
-            --passphrase "$passphrase" \
+        age --decrypt \
+            --identity "$identity_path" \
             --output "$dst" \
             "$enc_file" \
             && chmod 400 "$dst" \
