@@ -7,7 +7,7 @@ Private CA Certificate Manager. A Dockerized bash CLI for managing a self-hosted
 | Path | Purpose |
 |---|---|
 | `public/` | CA database, config, and cert files (safe to commit) |
-| `private-encrypted/` | GPG-encrypted private keys (safe to commit) |
+| `private-encrypted/` | age-encrypted private keys (safe to commit) |
 | `data/` | Live CA working directory (mounted into container, **do not commit**) |
 
 ## Usage
@@ -34,4 +34,4 @@ Run `ishiori-ca` with no arguments for full usage.
 
 ## Backup model
 
-`save` flattens CA files into `public/` (plaintext) and encrypts private keys into `private-encrypted/` with a GPG symmetric passphrase. Both directories are designed to be committed to git. `load` reverses this — reconstruct the live CA on any machine.
+`save` flattens CA files into `public/` (plaintext) and encrypts private keys into `private-encrypted/` with an age public key. Both directories are designed to be committed to git. `load` reverses this — reconstruct the live CA on any machine by providing the corresponding age secret key.
