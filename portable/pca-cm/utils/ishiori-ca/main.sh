@@ -12,6 +12,7 @@ source "${LIB_DIR}/helpers/parse.sh"
 source "${LIB_DIR}/helpers/dn.sh"
 source "${LIB_DIR}/helpers/x509.sh"
 source "${LIB_DIR}/cmd_generate_cert.sh"
+source "${LIB_DIR}/cmd_generate_ssh.sh"
 source "${LIB_DIR}/cmd_revoke_cert.sh"
 source "${LIB_DIR}/cmd_renew_crl.sh"
 source "${LIB_DIR}/cmd_save.sh"
@@ -19,6 +20,7 @@ source "${LIB_DIR}/cmd_load.sh"
 source "${LIB_DIR}/cmd_view_cert_list.sh"
 source "${LIB_DIR}/cmd_view_cert_show.sh"
 source "${LIB_DIR}/cmd_view_ca_status.sh"
+source "${LIB_DIR}/cmd_clean.sh"
 
 usage() {
     echo "Usage: ishiori-ca <command> [options]"
@@ -27,6 +29,10 @@ usage() {
     echo "  generate cert --cn <cn> --server|--client  Generate and sign a certificate"
     echo "    --no-passphrase                           Generate private key without passphrase"
     echo "    --expires-in <days>                       Certificate validity in days (default: CA config)"
+    echo ""
+    echo "  generate ssh --principal <user>            Generate an SSH keypair signed by the root CA key"
+    echo "    --name <name>                            Key filename, written to data/ssh-keys (default: <principal>-tmp-key)"
+    echo "    --expiry-in-days <days>                   Certificate validity in days (default: 1)"
     echo ""
     echo "  view cert list               List all certificates from CA database"
     echo "    --valid                    Show only valid certificates"
@@ -46,6 +52,8 @@ usage() {
     echo ""
     echo "  renew crl                          Regenerate the Certificate Revocation List"
     echo ""
+    echo "  clean                              Delete all non-valid certificates and their private keys"
+    echo ""
     echo "  save                               Save CA files to public/ and encrypt private keys to private-encrypted/"
     echo "  load                               Restore CA files from public/ and decrypt private keys from private-encrypted/"
 }
@@ -56,6 +64,7 @@ case "$1" in
         shift
         case "$1" in
             cert) shift; cmd_generate_cert "$@" ;;
+            ssh)  shift; cmd_generate_ssh "$@" ;;
             *)
                 echo "Unknown generate subcommand: $1"
                 usage
@@ -76,6 +85,7 @@ case "$1" in
                 ;;
         esac
         ;;
+    clean) shift; cmd_clean "$@" ;;
     revoke)
         shift
         case "$1" in

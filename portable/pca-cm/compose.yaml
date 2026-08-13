@@ -1,9 +1,8 @@
 services:
   # run with
-  # $ PUID=$(id -u) PGID=$(id -g) docker compose run pca-cm
+  # $ docker compose run pca-cm
   pca-cm:
     build: .
-    user: "${PUID}:${PGID}"
     container_name: app
     stdin_open: true
     tty: true

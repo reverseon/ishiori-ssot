@@ -1,0 +1,55 @@
+# The only STRICTLY REQUIRED field. It acts as the unique identity of this specific deployment.
+# If you change this value and reboot, cloud-init will think this is a brand new instance
+# and re-run all "per-instance" first-boot configuration modules.
+instance-id: {{ .InstanceID | default "iid-nocloud-001" }}
+
+# The hostname without the domain suffix. Cloud-init will use this to set the
+# system's hostname (e.g., in /etc/hostname).
+local-hostname: {{ .LocalHostname | default "vm-instance" }}
+
+# The fully qualified domain name (FQDN) or complete hostname.
+hostname: {{ .Hostname | default "vm-instance.local" }}
+
+# A descriptive name of the cloud platform or environment providing the data.
+# For NoCloud environments (like homelabs or local VMs), "NoCloud-Local" is appropriate.
+cloud-name: {{ .CloudName | default "NoCloud-Local" }}
+
+# Explicitly tells cloud-init which datasource to use.
+# While cloud-init usually detects this automatically via the "cidata" ISO label,
+# setting this ensures it explicitly parses the data using the NoCloud handler.
+platform: {{ .Platform | default "nocloud" }}
+
+# Informational fields for OS context. Cloud-init uses these (often detected automatically)
+# to adjust how it renders network configurations or paths based on the Linux flavor.
+distro: {{ .Distro | default "ubuntu" }}                  # The short name of the OS distribution
+distro-version: {{ .DistroVersion | default '22.04' }}         # The numerical version of the distribution
+distro-release: {{ .DistroRelease | default "jammy" }}           # The code name for the distribution release
+
+# A list of SSH public keys to inject into the default user's `~/.ssh/authorized_keys` file.
+# This grants immediate SSH access to the VM upon creation without needing a password.
+public_ssh_keys:
+{{ .PublicSSHKeys | default "- ssh-rsa AAAA..." }}
+
+# The network configuration definition. While often provided as a separate `network-config`
+# file on the NoCloud ISO, it can be embedded directly in the meta-data file.
+network:
+  # The configuration syntax version. Version 2 is standard for modern Linux (Netplan).
+  version: {{ .NetworkVersion | default 2 }}
+  ethernets:
+    # A logical name for the interface configuration block.
+    eth0:
+      # Matches the configuration to an actual hardware interface (e.g., anything starting with "eth").
+      match:
+        name: {{ .EthMatch | default "eth0" }}
+      # Disables automatic IP configuration via DHCP, allowing static IP settings.
+      dhcp4: {{ .DHCP4 | default false }}
+      # The static IPv4 address and subnet mask (in CIDR notation) assigned to the interface.
+      addresses:
+{{ .Addresses | default "        - 192.168.1.100/24" }}
+      # The default gateway/router for this network to route outbound traffic.
+      gateway4: {{ .Gateway4 | default "192.168.1.1" }}
+      # Configuration for DNS resolution.
+      nameservers:
+        # A list of DNS servers the instance will use to resolve domain names.
+        addresses:
+{{ .Nameservers | default "          - 8.8.8.8\n          - 8.8.4.4" }}

@@ -1,6 +1,6 @@
 FROM debian:latest
 
-RUN apt-get update && apt-get install -y age sudo openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y age sudo openssl openssh-client && rm -rf /var/lib/apt/lists/*
 
 
 RUN useradd -m -s /bin/bash shinonome-chloe && \

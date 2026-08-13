@@ -1,0 +1,26 @@
+# FYI:
+# - startup-root.sh is in the ./portable/scripts/rhel/ directory and is executed as root during the VM's first boot just after cloud-init has completed its initial configuration. It is intended for any additional setup or initialization tasks that require root privileges.
+
+
+# instance-id: populated by default by Hypervisor
+local-hostname: "yorha"
+hostname: "yorha.node.ishiori.net"
+cloud-name: "NoCloud-Local"
+platform: "nocloud"
+distro: "almalinux"
+distro-version: "10"
+distro-release: "AlmaLinux 10.0"
+
+network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        name: "eth0"
+      dhcp4: true # static IP is set via setup-script.sh
+      gateway4: "192.168.0.1"
+      nameservers:
+        addresses:
+          - 192.168.0.1
+          - 8.8.8.8
+          - 8.8.4.4

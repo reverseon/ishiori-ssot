@@ -1,0 +1,45 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - vim
+  - openssh-server
+  - openssl
+
+users:
+  - name: sysinit
+    groups: wheel
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    shell: /bin/bash
+    homedir: /home/sysinit
+
+ssh_pwauth: false
+disable_root: true
+
+chpasswd:
+  expire: false
+  users:
+    - name: root
+      # generate password with openssl passwd -6 -salt '$(openssl rand -base64 12 | tr -dc A-Za-z0-9 | head -c16)'
+      password: "and put the generated password hash here"
+      type: hash
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-basic-config.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      TrustedUserCAKeys /etc/ssh/ssh_ca.pub
+      PermitRootLogin no
+
+runcmd:
+  - 'curl -o /etc/ssh/ca_cert.pem "https://raw.githubusercontent.com/reverseon/ishiori-ssot/refs/heads/main/portable/pca-cm/public/certs%2Bca.cert.pem"'
+  - 'mkdir -p /home/sysinit/.ssh && chmod 700 /home/sysinit/.ssh && chown -R sysinit:sysinit /home/sysinit/.ssh'
+  - 'openssl x509 -in /etc/ssh/ca_cert.pem -pubkey -noout > /etc/ssh/ca_pubkey.pem'
+  - 'ssh-keygen -i -mPKCS8 -f /etc/ssh/ca_pubkey.pem > /etc/ssh/ssh_ca.pub || echo "Key conversion note: manual SSH key setup may be required"'
+  - 'sshd -t && systemctl restart sshd || echo "Warning: sshd config validation failed"'
+  - 'echo "System initialization complete"'

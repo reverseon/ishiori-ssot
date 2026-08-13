@@ -1,0 +1,32 @@
+#cloud-config
+
+# Instructs cloud-init whether to run the equivalent of 'dnf update' on the package manager
+# cache during the first boot.
+package_update: {{ .PackageUpdate | default "true" }}
+
+# Instructs cloud-init whether to run the equivalent of 'dnf upgrade' to install the latest
+# versions of all currently installed packages during the first boot.
+package_upgrade: {{ .PackageUpgrade | default "true" }}
+
+# A list of additional software packages for cloud-init to install via the system's default
+# package manager (dnf) after the update/upgrade phase is complete.
+packages:
+{{ .Packages | default "  - curl\n  - wget\n  - vim" }}
+
+# Defines the user accounts to be created, modified, or configured on the system.
+# This field allows injecting SSH keys, setting passwords, defining shells, and assigning groups.
+users:
+{{ .Users | default "  - name: ubuntu\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    groups: [sudo, adm]\n    ssh_authorized_keys:\n      - ssh-rsa AAAA..." }}
+
+# A boolean field that dictates whether the SSH daemon should be configured to allow
+# password-based authentication. If false, only key-based authentication is permitted.
+ssh_pwauth: {{ .SSHPwauth | default "false" }}
+
+# A boolean field that dictates whether the root user is allowed to log in directly via SSH.
+# If true, root login is disabled, forcing users to log in as a standard user and escalate privileges.
+disable_root: {{ .DisableRoot | default "true" }}
+
+# A list of raw shell commands or scripts to be executed late in the boot process.
+# These commands run after packages are installed and users are configured.
+runcmd:
+{{ .Runcmd | default "  - echo \"System initialization complete\"" }}
