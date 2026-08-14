@@ -451,7 +451,21 @@ sudo tee /etc/issue.net >/dev/null <<-'EOF'
 
 EOF
 
-sudo tee /etc/ssh/sshd_config.d/99-hardening.conf >/dev/null <<-'EOF'
+if [ "$PKG_MGR" = "apt-get" ] && [ -d /etc/update-motd.d ]; then
+	sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
+fi
+
+sudo tee /etc/motd >/dev/null <<-'EOF'
+ __   
+ \ \ / /__ |  _ \| | | | __ _ 
+  \ V / _ \| |_) | |_| |/ _` |
+   | | (_) |  _ <|  _  | (_| |
+   |_|\___/|_| \_\_| |_|\__,_|
+
+Welcome!
+EOF
+
+sudo tee /etc/ssh/sshd_config.d/00-a-hardening.conf >/dev/null <<-'EOF'
 	HostKey /etc/ssh/ssh_host_ed25519_key
 
 	PermitRootLogin no
