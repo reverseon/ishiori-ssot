@@ -69,8 +69,9 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-if [ "$(id -un)" != "sysinit" ]; then
-	echo "This script must be run as the sysinit user" >&2
+CURRENT_USER="$(id -un)"
+if [ "$CURRENT_USER" != "sysinit" ] && [ "$CURRENT_USER" != "root" ]; then
+	echo "This script must be run as the sysinit user or root" >&2
 	exit 1
 fi
 

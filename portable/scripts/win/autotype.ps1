@@ -12,7 +12,7 @@
 $DELAY_SECONDS = 5      # seconds to wait before typing starts
 $CHAR_DELAY_MS = 20     # delay between each character (raise if chars get dropped)
 
-$TextToType = "TEXT TO TYPE HERE"
+$TextToType = 'put your text here'  # <-- Edit this line with the text you want to type
 
 # Load Windows.Forms assembly for SendKeys
 Add-Type -AssemblyName System.Windows.Forms
@@ -23,9 +23,9 @@ Start-Sleep -Seconds $DELAY_SECONDS
 foreach ($ch in $TextToType.ToCharArray()) {
     # SendKeys reserves these chars: {}, +, ^, % — wrap them in braces to type literally
     if ($ch -in @('{', '}', '+', '^', '%', '(', ')')) {
-        [System.Windows.Forms.SendKeys]::SendKeys("{$ch}")
+        [System.Windows.Forms.SendKeys]::SendWait("{$ch}")
     } else {
-        [System.Windows.Forms.SendKeys]::SendKeys($ch)
+        [System.Windows.Forms.SendKeys]::SendWait($ch)
     }
     Start-Sleep -Milliseconds $CHAR_DELAY_MS
 }
