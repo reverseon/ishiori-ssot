@@ -5,10 +5,9 @@ package_upgrade: true
 
 packages:
   - curl
-  - wget
-  - vim
   - openssh-server
   - openssl
+  - open-vm-tools
 
 users:
   - name: sysinit
@@ -42,4 +41,5 @@ runcmd:
   - 'openssl x509 -in /etc/ssh/ca_cert.pem -pubkey -noout > /etc/ssh/ca_pubkey.pem'
   - 'ssh-keygen -i -mPKCS8 -f /etc/ssh/ca_pubkey.pem > /etc/ssh/ssh_ca.pub || echo "Key conversion note: manual SSH key setup may be required"'
   - 'sshd -t && systemctl restart sshd || echo "Warning: sshd config validation failed"'
+  - 'systemctl enable --now vmtoolsd'
   - 'echo "System initialization complete"'

@@ -3,7 +3,7 @@
 
 
 # instance-id: populated by default by Hypervisor
-local-hostname: "yorha"
+local-hostname: "YoRHa"
 hostname: "yorha.node.ishiori.net"
 cloud-name: "NoCloud-Local"
 platform: "nocloud"
