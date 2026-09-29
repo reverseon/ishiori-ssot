@@ -13,13 +13,12 @@ ADMIN_USER="devola"
 SERVICE_USER="popola"
 ADMIN_GROUP="wheel"
 
-# Sudo (log path is shared with the logrotate stanza)
+# Sudo
 SUDO_LOG="/var/log/sudo.log"
 
-# SSH (port is shared with the firewall rules; banner path with the sshd config)
+# SSH
 SSH_PORT=22
-# 00- prefix on purpose: sshd keeps the first value per option and reads the drop-ins alphabetically,
-# so this must sort before 01-permitrootlogin.conf, 50-redhat.conf and 50-cloud-init.conf
+# 00- prefix: sshd keeps the first value per option, so this must sort before the other drop-ins
 SSH_CONF="/etc/ssh/sshd_config.d/00-${FILE_MIDFIX}-ssh.conf"
 SSH_BANNER="/etc/ssh/banner-${FILE_MIDFIX}.net"
 IFS= read -r -d '' SSH_BANNER_TEXT << 'BANNER_EOF' || true
@@ -138,9 +137,8 @@ SERVICE_SUDOERS_TEXT="${ADMIN_USER} ALL=(${SERVICE_USER}) NOPASSWD: /bin/bash -l
 SU_BIN="/usr/bin/su"
 SU_MODE="4750"
 
-# A util-linux update (dnf-automatic applies these unattended) restores the packaged su mode,
-# so a path unit and a timer re-apply it. The helper only writes when the mode drifted, otherwise
-# its own chmod would fire the path unit again in a loop.
+# A util-linux update restores the packaged su mode, so a path unit and a timer re-apply it.
+# The helper only writes on drift, otherwise its own chmod would retrigger the path unit in a loop.
 SU_GUARD_BIN="/usr/local/sbin/${FILE_MIDFIX}-su-guard"
 SU_GUARD_SERVICE="${FILE_MIDFIX}-su-guard.service"
 SU_GUARD_PATH="${FILE_MIDFIX}-su-guard.path"
@@ -199,8 +197,7 @@ EOF
 
 # Session timeout
 TIMEOUT_CONF="/etc/profile.d/${FILE_MIDFIX}-timeout.sh"
-# Not readonly, so a long job can be run with "TMOUT=0"; skipped inside tmux/screen, where an idle
-# pane is expected and the timeout would kill the multiplexer's shells
+# Not readonly (override with TMOUT=0); skipped inside tmux/screen, where idle panes are expected
 IFS= read -r -d '' TIMEOUT_CONF_TEXT << 'EOF' || true
 if [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then
   export TMOUT=900
@@ -282,9 +279,8 @@ EOF
 
 # Restrictive default permissions for interactive shells
 UMASK_CONF="/etc/profile.d/99-${FILE_MIDFIX}-umask.sh"
-# Not applied to root's own shells. Commands run via sudo from a 027 shell would inherit that umask
-# (sudo ORs the caller's umask with the sudoers one), so the sudo config sets "umask=0022" plus
-# "umask_override" to keep files created under sudo (pip install, config, build output) readable by services
+# Not applied to root. The sudo config sets "umask=0022" + "umask_override" so files created
+# under sudo don't inherit 027 (sudo ORs the caller's umask) and stay readable by services
 IFS= read -r -d '' UMASK_CONF_TEXT << 'EOF' || true
 if [ "$(id -u)" -ne 0 ]; then
   umask 027
@@ -314,10 +310,9 @@ IFS= read -r -d '' RSYSLOG_NFT_TEXT << EOF || true
 & stop
 EOF
 
-# rsyslog: every passwordless switch to the service user gets its own log file.
-# Matched on sudo's own syslog line (written by root, so the service user cannot forge it) and
-# without "& stop", so the line still reaches /var/log/secure. Point a forwarder or a log
-# watcher at this file to get notified.
+# rsyslog: passwordless switches to the service user get their own log file.
+# Matched on sudo's own syslog line (root-written, unforgeable by the service user); no "& stop",
+# so the line still reaches /var/log/secure.
 POPOLA_LOG="/var/log/popola-switch-${FILE_MIDFIX}.log"
 RSYSLOG_POPOLA_CONF="/etc/rsyslog.d/99-${FILE_MIDFIX}-popola-switch.conf"
 IFS= read -r -d '' RSYSLOG_POPOLA_TEXT << EOF || true
@@ -338,9 +333,7 @@ ${POPOLA_LOG} {
 }
 EOF
 
-# logrotate: one self-contained stanza per managed log
-# (a shared /var/log/*.log glob would overlap these files, and logrotate
-# rejects a log file that appears in more than one stanza)
+# logrotate: one stanza per log (logrotate rejects a file that appears in more than one)
 LOGROTATE_SUDO_CONF="/etc/logrotate.d/99-${FILE_MIDFIX}-sudo"
 IFS= read -r -d '' LOGROTATE_SUDO_TEXT << EOF || true
 ${SUDO_LOG} {
@@ -391,19 +384,16 @@ table inet filter {
     # Accept ICMP for diagnostics (IPv4)
     icmp type echo-request accept
 
-    # Accept ICMPv6 for diagnostics and for IPv6 to function (neighbor discovery, redirects,
-    # error messages needed for path MTU discovery, MLD so multicast/ND keeps working)
+    # Accept ICMPv6 needed for IPv6 to function (ND, path MTU discovery, MLD) and diagnostics
     icmpv6 type { echo-request, destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert, nd-router-solicit, nd-redirect, mld-listener-query, mld-listener-report, mld2-listener-report } accept
 
-    # Accept DHCPv6 replies (server -> client port 546, link-local source); these do not
-    # match conntrack when the request was sent to a multicast address
+    # Accept DHCPv6 replies (no conntrack match when the request was multicast)
     ip6 saddr fe80::/10 udp sport 547 udp dport 546 accept
 
-    # Accept DHCPv4 replies (server -> client port 68); broadcast offers/acks and T2 rebinds
-    # do not match conntrack, so without this lease renewals can fail
+    # Accept DHCPv4 replies (broadcast offers/acks and rebinds don't match conntrack)
     udp sport 67 udp dport 68 accept
 
-    # Log and drop everything else (rate limited to 1 per second to prevent log flooding)
+    # Log (rate limited) and drop everything else
     limit rate 1/second log prefix "[nftables] DROP: " flags all
   }
 
@@ -427,14 +417,14 @@ AIDE_LOG_DIR="/var/log/aide"
 AIDE_LOG="${AIDE_LOG_DIR}/check.log"
 AIDE_TAG="${FILE_MIDFIX}-aide"
 AIDE_DRIFT_FLAG="/var/lib/aide/drift-unreviewed"
-# One wrapper for both modes. aide exits 1-7 when it found differences (a bitmask of new/removed/changed)
-# and 8 or more on real errors; differences are a finding, not a unit failure, so only errors exit non-zero.
-# Findings go to a log file and to syslog (authpriv, so they land in /var/log/secure), not just the journal.
-# "check" only reports. "update" refreshes the baseline and is run by dnf-automatic around its transaction:
-# check BEFORE the update (anything found there is a real finding), update AFTER (package changes are expected).
-# If that pre-check found drift, "update" leaves the baseline alone (see AIDE_DRIFT_FLAG), so the daily check
-# keeps reporting it until an admin reviews it and runs "accept" (refresh baseline and clear the flag).
-# All modes share a lock so the daily timer cannot overlap an update.
+# One wrapper for all modes. aide exits 1-7 on differences and 8+ on errors; differences are a
+# finding, not a unit failure, so only errors exit non-zero. Findings go to a log file and to
+# syslog (authpriv -> /var/log/secure).
+# "check" only reports. "update" refreshes the baseline; dnf-automatic runs check BEFORE its
+# transaction (findings are real) and update AFTER (package changes are expected). If the
+# pre-check found drift, "update" leaves the baseline alone (AIDE_DRIFT_FLAG) so the daily check
+# keeps reporting until an admin reviews and runs "accept" (refresh baseline, clear the flag).
+# All modes share a lock.
 IFS= read -r -d '' AIDE_HELPER_TEXT << EOF || true
 #!/bin/bash
 set -u
@@ -444,9 +434,8 @@ exec 9> "/run/${FILE_MIDFIX}-aide.lock"
 flock 9
 report="\$(mktemp)"
 trap 'rm -f "\${report}"' EXIT
-# A refresh would absorb whatever drift exists, so "update" refuses while ${AIDE_DRIFT_FLAG} exists.
-# "check" sets it on any drift or error and clears it only on a clean run, so drift found by the pre-update
-# check keeps alerting on every daily check until an admin reviews it and runs "accept".
+# A refresh would absorb existing drift, so "update" refuses while ${AIDE_DRIFT_FLAG} exists.
+# "check" sets it on drift or error and clears it only on a clean run.
 if [ "\${mode}" = "update" ] && [ -e "${AIDE_DRIFT_FLAG}" ]; then
   echo "=== \$(date -Is) aide update skipped: unreviewed drift, baseline NOT refreshed ===" >> "${AIDE_LOG}"
   logger -t ${AIDE_TAG} -p authpriv.err "baseline NOT refreshed: unreviewed drift since last clean check, see ${AIDE_LOG}; review then run: ${AIDE_HELPER} accept"
@@ -530,9 +519,8 @@ WantedBy=timers.target
 UNIT
 
 # Reboot notice: unattended updates can replace the kernel or core libraries, but nothing reboots the VM.
-# "dnf needs-restarting -r" exits 1 when a reboot is needed. The helper then drops a note into /run/motd.d,
-# which pam_motd shows under /etc/motd at login (files there must be world-readable). /run is cleared on
-# reboot, so the note goes away by itself. Only exit 1 counts as "needed"; any other failure leaves the note as it is.
+# "dnf needs-restarting -r" exits 1 when a reboot is needed; the helper then drops a world-readable
+# note into /run/motd.d (shown by pam_motd; cleared on reboot). Only exit 1 counts; other failures leave the note as is.
 REBOOT_NOTICE_FILE="/run/motd.d/50-${FILE_MIDFIX}-reboot-required"
 REBOOT_CHECK_BIN="/usr/local/sbin/${FILE_MIDFIX}-reboot-check"
 REBOOT_CHECK_SERVICE="${FILE_MIDFIX}-reboot-check.service"
@@ -581,10 +569,9 @@ ExecStartPost=-${REBOOT_CHECK_BIN}
 EOF
 
 # == PACKAGE INSTALLATION ==
-# Apply security updates only (same policy as dnf-automatic below), then install base tooling
+# Security updates only (same policy as dnf-automatic), then base tooling
 dnf upgrade --security -y
-# htop is not in the AlmaLinux base repos, it ships in EPEL. Per the AlmaLinux 10 docs, EPEL packages
-# can depend on CodeReady Builder (repo id "crb"), so enable it first; config-manager comes from dnf-plugins-core
+# htop ships in EPEL, which can depend on CodeReady Builder (crb), so enable that first
 dnf install -y dnf-plugins-core
 dnf config-manager --set-enabled crb
 dnf install -y epel-release
@@ -598,12 +585,11 @@ systemctl enable --now crond
 systemctl enable --now atd
 
 # == AUTOMATIC UPDATES ==
-# Security-only updates, applied by dnf-automatic.timer (whole-file config, owned by this script)
 printf '%s' "${DNF_AUTOMATIC_CONF_TEXT}" > "${DNF_AUTOMATIC_CONF}"
 chmod 0644 "${DNF_AUTOMATIC_CONF}"
 systemctl enable --now dnf-automatic.timer
 
-# Reboot notice (see REBOOT_CHECK_*): run after every dnf-automatic transaction and once a day
+# Reboot notice: after every dnf-automatic transaction and daily
 printf '%s' "${REBOOT_CHECK_BIN_TEXT}" > "${REBOOT_CHECK_BIN}"
 chmod 0755 "${REBOOT_CHECK_BIN}"
 restorecon "${REBOOT_CHECK_BIN}" 2>/dev/null || true
@@ -622,20 +608,19 @@ chmod 0644 "${SYSCTL_HARDENING_CONF}"
 sysctl --system > /dev/null
 
 # == AUDITING ==
-# Watch identity, sudo and sshd config files, and the use of su/sudo
 printf '%s' "${AUDIT_RULES_TEXT}" > "${AUDIT_RULES_CONF}"
 chmod 0640 "${AUDIT_RULES_CONF}"
 systemctl enable --now auditd
 augenrules --load || echo "WARNING: could not load audit rules now (they apply on next boot)" >&2
 
 # == ATTACK SURFACE REDUCTION ==
-# Mask unused services (ignore ones the image does not ship)
+# Mask unused services (missing ones are ignored)
 for svc in "${MASKED_SERVICES[@]}"; do
   systemctl disable --now "${svc}" 2>/dev/null || true
   systemctl mask "${svc}" 2>/dev/null || true
 done
 
-# Blacklist unused kernel modules; "install ... /bin/false" also blocks explicit modprobe
+# Blacklist unused kernel modules ("install ... /bin/false" also blocks explicit modprobe)
 {
   for mod in "${BLACKLISTED_MODULES[@]}"; do
     echo "blacklist ${mod}"
@@ -644,9 +629,8 @@ done
 } > "${MODPROBE_BLACKLIST_CONF}"
 chmod 0644 "${MODPROBE_BLACKLIST_CONF}"
 
-# The blacklist only stops future loads, so unload any of these that are already loaded.
-# rmmod fails if the module is in use (e.g. usb-storage backing a mounted disk); that is left for the next reboot.
-# Capture lsmod first: piping into `grep -q` under pipefail can SIGPIPE and report a false "not loaded".
+# Unload already-loaded modules; ones in use are left for the next reboot.
+# lsmod is captured first: piping into `grep -q` under pipefail can SIGPIPE and misreport.
 loaded_modules="$(lsmod | awk 'NR>1 {print $1}')"
 for mod in "${BLACKLISTED_MODULES[@]}"; do
   lsmod_name="${mod//-/_}"
@@ -680,18 +664,16 @@ mount -o "remount,${SHM_REMOUNT_OPTS}" /dev/shm || true
 
 # == SECURITY & IAM HARDENING ==
 
-# MOTD (Message of the Day) displayed after login
+# MOTD
 printf '%s\n\nNotes:\n%s%s' "${MOTD_TEXT}" "${MOTD_AIDE_NOTE}" "${MOTD_POPOLA_NOTE}" > "${MOTD_PATH}"
 chmod 0644 "${MOTD_PATH}"
 
 # Sudo configuration via sudoers.d
-# Enables PTY mode, sets auth cache timeout, and enables audit logging
 mkdir -p "${SUDOERS_DIR}"
 
 # install_validated MODE DEST TEXT VALIDATOR...
-# Writes TEXT to a temp file and runs "VALIDATOR <tmpfile>" on it. Only a file that passes is installed,
-# so a bad sudoers file or sshd drop-in never reaches its live directory. The install goes to DEST.new
-# first (ignored by sudo and sshd, which skip names with a dot / not ending in .conf) and is then renamed.
+# Runs "VALIDATOR <tmpfile>" on TEXT and installs it only if it passes. Goes via DEST.new
+# (ignored by sudo and sshd) and is then renamed, so a bad file never goes live.
 install_validated() {
   local mode="$1" dest="$2" text="$3" tmp
   shift 3
@@ -710,32 +692,26 @@ install_validated() {
 
 install_validated 0440 "${SUDO_CONF}" "${SUDO_CONF_TEXT}" visudo -c -f
 
-
-# Set root password (pre-hashed, see ROOT_PASSWORD_HASH at top)
+# Set root password
 echo "root:${ROOT_PASSWORD_HASH}" | chpasswd -e
 
-# Prevent empty passwords via authselect
-# Ensures all user accounts require non-empty passwords
+# Disallow empty passwords via authselect
 authselect select "${AUTHSELECT_PROFILE}" "${AUTHSELECT_FEATURES[@]}" --force
 
-# Limit password guessing (console, sudo) with faillock
-# The stock faillock.conf is comments only, so this script owns the whole file
+# Limit password guessing with faillock (stock file is comments only, so we own it whole)
 printf '%s' "${FAILLOCK_CONF_TEXT}" > "${FAILLOCK_CONF}"
 chmod 0644 "${FAILLOCK_CONF}"
 
-# Session timeout (15 minutes of inactivity)
-# Automatically logs out inactive shells to prevent unattended sessions
-# Users can override it (TMOUT=0) and tmux/screen sessions are exempt, so this is a default, not a hard control
+# Session timeout (15 minutes idle); a default, not a hard control (see TIMEOUT_CONF_TEXT)
 printf '%s' "${TIMEOUT_CONF_TEXT}" > "${TIMEOUT_CONF}"
 chmod 0644 "${TIMEOUT_CONF}"
 
-# Create devola user with sudo access (password hash: DEVOLA_PASSWORD_HASH at top)
+# Create the admin user
 id -u "${ADMIN_USER}" &>/dev/null || useradd -m -s "${ADMIN_SHELL}" "${ADMIN_USER}"
 echo "${ADMIN_USER}:${DEVOLA_PASSWORD_HASH}" | chpasswd -e
 usermod -aG "${ADMIN_GROUP}" "${ADMIN_USER}"
 
-# Restrict su to the admin group by locking the binary (setuid kept, other users get no execute)
-# A package update of util-linux can reset this, so a path unit + timer re-apply it (see SU_GUARD_*)
+# Restrict su to the admin group (re-applied by the SU_GUARD_* units after package updates)
 chgrp "${ADMIN_GROUP}" "${SU_BIN}"
 chmod "${SU_MODE}" "${SU_BIN}"
 printf '%s' "${SU_GUARD_BIN_TEXT}" > "${SU_GUARD_BIN}"
@@ -748,19 +724,17 @@ restorecon "${SU_GUARD_BIN}" 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable --now "${SU_GUARD_PATH}" "${SU_GUARD_TIMER}"
 
-# Add admin user to sudoers with password requirement (already configured via timestamp_timeout)
+# Admin sudo access (password required)
 install_validated 0440 "${ADMIN_SUDOERS_CONF}" "${ADMIN_SUDOERS_TEXT}"$'\n' visudo -c -f
 
-# Configure admin user SSH public key authentication
-# Download the Ishiori master public key and authorize it for the admin user
+# Authorize the master public key for the admin user
 install -d -m 0700 -o "${ADMIN_USER}" -g "${ADMIN_USER}" "${ADMIN_SSH_DIR}"
 KEY_TMP="$(mktemp)"
 trap 'rm -f "${KEY_TMP}"' EXIT
 curl -fsSL "${ADMIN_PUBKEY_URL}" -o "${KEY_TMP}"
 # Abort before touching sshd if the download is not a valid public key
 KEY_INFO="$(ssh-keygen -l -f "${KEY_TMP}")"
-# sshd only accepts ed25519 keys (PubkeyAcceptedAlgorithms) and password auth is off,
-# so any other key type would lock the admin out. ssh-keygen -l prints "<bits> <fp> <comment> (<TYPE>)" per key.
+# sshd accepts only ed25519 and password auth is off, so any other key type would lock the admin out
 if [ -z "${KEY_INFO}" ] || grep -qv '(ED25519)$' <<< "${KEY_INFO}"; then
   echo "Admin public key must be ssh-ed25519 only, got:" >&2
   echo "${KEY_INFO}" >&2
@@ -769,24 +743,21 @@ fi
 install -m 0600 -o "${ADMIN_USER}" -g "${ADMIN_USER}" "${KEY_TMP}" "${ADMIN_AUTHORIZED_KEYS}"
 restorecon -R "${ADMIN_SSH_DIR}" 2>/dev/null || true
 
-# SSH hardening via sshd_config.d
-# Applied only after the admin key is in place, so a failed key download cannot lock everyone out.
-# Disables root login and password auth, requires SSH keys only
+# SSH hardening via sshd_config.d, only after the admin key is in place so a failed download cannot lock everyone out
 mkdir -p /etc/ssh/sshd_config.d
 
-# SSH login banner with legal notice (written first, the drop-in references it)
+# Banner (written first, the drop-in references it)
 printf '%s\n' "${SSH_BANNER_TEXT}" > "${SSH_BANNER}"
 chmod 0644 "${SSH_BANNER}"
 
-# The drop-in is syntax-checked standalone in a temp file and only then installed
+# The drop-in is syntax-checked standalone, then installed
 install_validated 0644 "${SSH_CONF}" "${SSH_CONF_TEXT}" sshd -t -f
 
 # Check the installed result as a whole before restarting
 sshd -t
 
-# Port is the exception to first-value-wins: it accumulates, so an explicit Port in the main config
-# or another drop-in would make sshd listen on both. Comment those out (backup kept beside the file;
-# a name not ending in .conf is not read by the sshd_config.d include).
+# Port accumulates instead of first-value-wins, so another Port directive would make sshd listen on both.
+# Comment those out (backup beside the file; a non-.conf name is not read by the include).
 SSH_PORT_RE='^[[:space:]]*port[[:space:]=]'
 for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
   [[ -f "${f}" && "${f}" != "${SSH_CONF}" ]] || continue
@@ -815,29 +786,24 @@ for expected in \
   grep -qixF "${expected}" <<< "${SSHD_EFFECTIVE}" || { echo "sshd effective config mismatch: expected '${expected}'" >&2; exit 1; }
 done
 
-# Safety net: after the cleanup above our port must be the only one left
+# Our port must be the only one left
 SSHD_PORTS="$(awk 'tolower($1)=="port"{print $2}' <<< "${SSHD_EFFECTIVE}")"
 [[ "${SSHD_PORTS}" == "${SSH_PORT}" ]] || { echo "sshd listens on unexpected port(s): $(tr '\n' ' ' <<< "${SSHD_PORTS}")(expected only ${SSH_PORT})" >&2; exit 1; }
 
 systemctl restart sshd
 
-# Create popola service-level user
-# Cannot login directly (nologin shell, locked password), only reachable via
-# sudo from the admin user: sudo -u popola /bin/bash -l
-# No home directory (-M): the home field points at /nonexistent, so nothing is created or writable there
+# Service user: no direct login (nologin shell, locked password), reachable only via sudo from the admin.
+# No home directory (-M, /nonexistent).
 id -u "${SERVICE_USER}" &>/dev/null || useradd -M -d /nonexistent -s "${SERVICE_SHELL}" -c "${SERVICE_COMMENT}" "${SERVICE_USER}"
 
-# Lock the account (no password login)
 passwd -l "${SERVICE_USER}"
 
-# Allow admin user to open a login shell as the service user without a password.
-# Runs bash directly, because su/sudo -i would use the nologin shell and su would ask for the locked password.
+# Passwordless login shell as the service user. Runs bash directly: sudo -i would use the
+# nologin shell and su would ask for the locked password.
 install_validated 0440 "${SERVICE_SUDOERS_CONF}" "${SERVICE_SUDOERS_TEXT}"$'\n' visudo -c -f
 
 # == REMOVE OTHER LOGIN USERS ==
-# Runs last among the account steps, so the admin key, sudo and sshd are already in place.
-# Only regular accounts are candidates: UID within UID_MIN..UID_MAX from login.defs (system accounts are below,
-# nobody is above).
+# Runs last among the account steps. Only regular accounts (UID_MIN..UID_MAX from login.defs) are candidates.
 # Preview only: PRUNE_DRY_RUN=1 bash alma-setup.sh
 PRUNE_DRY_RUN="${PRUNE_DRY_RUN:-0}"
 LOGIN_UID_MIN="$(awk '$1=="UID_MIN"{print $2}' /etc/login.defs)"
@@ -856,7 +822,7 @@ while IFS= read -r stale_user; do
   echo "Removing user ${stale_user}"
   usermod -L -s /sbin/nologin "${stale_user}"
   pkill -KILL -u "${stale_user}" || true
-  # pkill returns before the processes are gone and userdel refuses while any remain: wait up to ~10s
+  # userdel refuses while processes remain: wait up to ~10s
   for _ in $(seq 1 50); do
     pgrep -u "${stale_user}" > /dev/null || break
     sleep 0.2
@@ -868,56 +834,48 @@ done < <(awk -F: -v min="${LOGIN_UID_MIN}" -v max="${LOGIN_UID_MAX}" '$3>=min &&
 
 # == LOGGING ==
 
-# Configure rsyslog to send nftables logs to dedicated file
+# rsyslog: nftables drops
 mkdir -p "$(dirname "${RSYSLOG_NFT_CONF}")"
 printf '%s' "${RSYSLOG_NFT_TEXT}" > "${RSYSLOG_NFT_CONF}"
 chmod 0644 "${RSYSLOG_NFT_CONF}"
 
-# Switches to the service user (sudo -u popola) get a dedicated log
+# rsyslog: service-user switches
 printf '%s' "${RSYSLOG_POPOLA_TEXT}" > "${RSYSLOG_POPOLA_CONF}"
 chmod 0644 "${RSYSLOG_POPOLA_CONF}"
 
-# Restart rsyslog to apply configuration
 systemctl restart rsyslog
 
-# Sudo logs (kept longer for audit trail, compressed)
+# Sudo log (30 days)
 mkdir -p "$(dirname "${LOGROTATE_SUDO_CONF}")"
 printf '%s' "${LOGROTATE_SUDO_TEXT}" > "${LOGROTATE_SUDO_CONF}"
 chmod 0644 "${LOGROTATE_SUDO_CONF}"
 
-# nftables logs (postrotate reloads rsyslog so it reopens the file)
+# nftables log (postrotate reloads rsyslog to reopen the file)
 printf '%s' "${LOGROTATE_NFT_TEXT}" > "${LOGROTATE_NFT_CONF}"
 chmod 0644 "${LOGROTATE_NFT_CONF}"
 
-# Service-user switch log (kept a year, compressed)
+# Service-user switch log (a year)
 printf '%s' "${LOGROTATE_POPOLA_TEXT}" > "${LOGROTATE_POPOLA_CONF}"
 chmod 0644 "${LOGROTATE_POPOLA_CONF}"
 
 # == NETWORK HARDENING ==
 
-# Configure nftables firewall rules
 mkdir -p "${NFT_DIR}"
-
-# Create main nftables ruleset
 printf '%s' "${NFT_RULES_TEXT}" > "${NFT_RULES_CONF}"
 chmod 0644 "${NFT_RULES_CONF}"
 
-# Add include statement to main nftables config for persistence on reboot
+# Include the ruleset in the main nftables config so it persists across reboots
 grep -qxF "${NFT_INCLUDE}" "${NFT_SYSCONFIG}" || echo "${NFT_INCLUDE}" >> "${NFT_SYSCONFIG}"
 
-# nftables is the only firewall manager: stop and mask firewalld if the image ships it,
-# so it cannot load its own ruleset alongside ours
+# nftables is the only firewall manager: mask firewalld so it cannot load a second ruleset
 systemctl disable --now firewalld 2>/dev/null || true
 systemctl mask firewalld 2>/dev/null || true
 
-# Enable nftables service to persist rules on reboot
 systemctl enable nftables
-
-# Load nftables rules by restarting the service
 systemctl restart nftables
 
 # == FILE INTEGRITY (AIDE) ==
-# Daily integrity check via systemd timer; findings go to ${AIDE_LOG} and syslog (see AIDE_HELPER_TEXT)
+# Daily integrity check via systemd timer (see AIDE_HELPER_TEXT)
 printf '%s' "${AIDE_HELPER_TEXT}" > "${AIDE_HELPER}"
 chmod 0755 "${AIDE_HELPER}"
 restorecon "${AIDE_HELPER}" 2>/dev/null || true
@@ -932,11 +890,11 @@ mkdir -p "${AIDE_DNF_DROPIN_DIR}"
 printf '%s' "${AIDE_DNF_DROPIN_TEXT}" > "${AIDE_DNF_DROPIN_CONF}"
 chmod 0644 "${AIDE_DNF_DROPIN_CONF}"
 systemctl daemon-reload
-# Enable now (creates the wants symlink) but start after the baseline exists, so the timer cannot fire against a missing DB
+# Enable now but start after the baseline exists, so the timer cannot fire against a missing DB
 systemctl enable aide-check.timer
 
-# Build the baseline last, after every AIDE-related file above is in place, so the first check does not
-# report them as new (which would set AIDE_DRIFT_FLAG and block "update"). Skipped if one already exists.
+# Build the baseline last so the AIDE files above aren't reported as new (which would set
+# AIDE_DRIFT_FLAG and block "update"). Skipped if one exists.
 if [ ! -f "${AIDE_DB}" ]; then
   aide --init
   mv "${AIDE_DB_NEW}" "${AIDE_DB}"
