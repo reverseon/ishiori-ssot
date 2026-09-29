@@ -100,6 +100,7 @@ PACKAGES=(
   qemu-guest-agent
   nftables
   dnf-automatic
+  dnf-plugins-core
   audit
   audit-rules
   chrony
@@ -108,7 +109,6 @@ PACKAGES=(
   at
   rsyslog
   logrotate
-  sssd
 )
 
 # User shells and account details
@@ -187,7 +187,7 @@ WantedBy=timers.target
 EOF
 
 # Authselect profile
-AUTHSELECT_PROFILE="sssd"
+AUTHSELECT_PROFILE="minimal"
 AUTHSELECT_FEATURES=(without-nullok with-faillock)
 
 # Faillock
@@ -529,10 +529,64 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
+# Reboot notice: unattended updates can replace the kernel or core libraries, but nothing reboots the VM.
+# "dnf needs-restarting -r" exits 1 when a reboot is needed. The helper then drops a note into /run/motd.d,
+# which pam_motd shows under /etc/motd at login (files there must be world-readable). /run is cleared on
+# reboot, so the note goes away by itself. Only exit 1 counts as "needed"; any other failure leaves the note as it is.
+REBOOT_NOTICE_FILE="/run/motd.d/50-${FILE_MIDFIX}-reboot-required"
+REBOOT_CHECK_BIN="/usr/local/sbin/${FILE_MIDFIX}-reboot-check"
+REBOOT_CHECK_SERVICE="${FILE_MIDFIX}-reboot-check.service"
+REBOOT_CHECK_TIMER="${FILE_MIDFIX}-reboot-check.timer"
+REBOOT_DNF_DROPIN_CONF="${AIDE_DNF_DROPIN_DIR}/98-${FILE_MIDFIX}-reboot-check.conf"
+IFS= read -r -d '' REBOOT_CHECK_BIN_TEXT << EOF || true
+#!/bin/bash
+set -u
+dnf needs-restarting -r > /dev/null 2>&1
+rc=\$?
+if [ "\${rc}" -eq 1 ]; then
+  if [ ! -e "${REBOOT_NOTICE_FILE}" ]; then
+    mkdir -p "\$(dirname "${REBOOT_NOTICE_FILE}")"
+    printf '%s\n' '  - Reboot required: updates changed the kernel or core libraries. Run "sudo reboot" when convenient.' > "${REBOOT_NOTICE_FILE}"
+    chmod 0644 "${REBOOT_NOTICE_FILE}"
+    logger -t ${FILE_MIDFIX}-reboot-check -p authpriv.warning "reboot required to finish applying updates"
+  fi
+elif [ "\${rc}" -eq 0 ]; then
+  rm -f "${REBOOT_NOTICE_FILE}"
+fi
+exit 0
+EOF
+IFS= read -r -d '' REBOOT_CHECK_SERVICE_TEXT << EOF || true
+[Unit]
+Description=Check whether a reboot is required
+
+[Service]
+Type=oneshot
+ExecStart=${REBOOT_CHECK_BIN}
+EOF
+# Daily as well, so a manual "dnf update" is noticed too (dnf-automatic runs the helper right after its own transaction)
+IFS= read -r -d '' REBOOT_CHECK_TIMER_TEXT << 'UNIT' || true
+[Unit]
+Description=Daily reboot-required check
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+IFS= read -r -d '' REBOOT_DNF_DROPIN_TEXT << EOF || true
+[Service]
+ExecStartPost=-${REBOOT_CHECK_BIN}
+EOF
+
 # == PACKAGE INSTALLATION ==
 # Apply security updates only (same policy as dnf-automatic below), then install base tooling
 dnf upgrade --security -y
-# htop is not in the AlmaLinux base repos, it ships in EPEL
+# htop is not in the AlmaLinux base repos, it ships in EPEL. Per the AlmaLinux 10 docs, EPEL packages
+# can depend on CodeReady Builder (repo id "crb"), so enable it first; config-manager comes from dnf-plugins-core
+dnf install -y dnf-plugins-core
+dnf config-manager --set-enabled crb
 dnf install -y epel-release
 dnf install -y "${PACKAGES[@]}"
 
@@ -548,6 +602,19 @@ systemctl enable --now atd
 printf '%s' "${DNF_AUTOMATIC_CONF_TEXT}" > "${DNF_AUTOMATIC_CONF}"
 chmod 0644 "${DNF_AUTOMATIC_CONF}"
 systemctl enable --now dnf-automatic.timer
+
+# Reboot notice (see REBOOT_CHECK_*): run after every dnf-automatic transaction and once a day
+printf '%s' "${REBOOT_CHECK_BIN_TEXT}" > "${REBOOT_CHECK_BIN}"
+chmod 0755 "${REBOOT_CHECK_BIN}"
+restorecon "${REBOOT_CHECK_BIN}" 2>/dev/null || true
+printf '%s' "${REBOOT_CHECK_SERVICE_TEXT}" > "/etc/systemd/system/${REBOOT_CHECK_SERVICE}"
+printf '%s' "${REBOOT_CHECK_TIMER_TEXT}" > "/etc/systemd/system/${REBOOT_CHECK_TIMER}"
+chmod 0644 "/etc/systemd/system/${REBOOT_CHECK_SERVICE}" "/etc/systemd/system/${REBOOT_CHECK_TIMER}"
+mkdir -p "${AIDE_DNF_DROPIN_DIR}"
+printf '%s' "${REBOOT_DNF_DROPIN_TEXT}" > "${REBOOT_DNF_DROPIN_CONF}"
+chmod 0644 "${REBOOT_DNF_DROPIN_CONF}"
+systemctl daemon-reload
+systemctl enable --now "${REBOOT_CHECK_TIMER}"
 
 # == KERNEL HARDENING (sysctl) ==
 printf '%s' "${SYSCTL_HARDENING_TEXT}" > "${SYSCTL_HARDENING_CONF}"
@@ -757,7 +824,8 @@ systemctl restart sshd
 # Create popola service-level user
 # Cannot login directly (nologin shell, locked password), only reachable via
 # sudo from the admin user: sudo -u popola /bin/bash -l
-id -u "${SERVICE_USER}" &>/dev/null || useradd -m -s "${SERVICE_SHELL}" -c "${SERVICE_COMMENT}" "${SERVICE_USER}"
+# No home directory (-M): the home field points at /nonexistent, so nothing is created or writable there
+id -u "${SERVICE_USER}" &>/dev/null || useradd -M -d /nonexistent -s "${SERVICE_SHELL}" -c "${SERVICE_COMMENT}" "${SERVICE_USER}"
 
 # Lock the account (no password login)
 passwd -l "${SERVICE_USER}"
@@ -769,7 +837,7 @@ install_validated 0440 "${SERVICE_SUDOERS_CONF}" "${SERVICE_SUDOERS_TEXT}"$'\n' 
 # == REMOVE OTHER LOGIN USERS ==
 # Runs last among the account steps, so the admin key, sudo and sshd are already in place.
 # Only regular accounts are candidates: UID within UID_MIN..UID_MAX from login.defs (system accounts are below,
-# nobody is above). Read from /etc/passwd, not getent, so sssd/LDAP users are never enumerated.
+# nobody is above).
 # Preview only: PRUNE_DRY_RUN=1 bash alma-setup.sh
 PRUNE_DRY_RUN="${PRUNE_DRY_RUN:-0}"
 LOGIN_UID_MIN="$(awk '$1=="UID_MIN"{print $2}' /etc/login.defs)"
