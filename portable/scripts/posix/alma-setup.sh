@@ -185,7 +185,7 @@ WantedBy=timers.target
 EOF
 
 # Authselect profile
-AUTHSELECT_PROFILE="minimal"
+AUTHSELECT_PROFILE="local"
 AUTHSELECT_FEATURES=(without-nullok with-faillock)
 
 # Faillock
