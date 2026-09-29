@@ -101,6 +101,7 @@ PACKAGES=(
   nftables
   dnf-automatic
   audit
+  audit-rules
   chrony
   aide
   cronie
