@@ -499,9 +499,12 @@ ExecStartPost=-${AIDE_HELPER} update
 EOF
 # Shown under the MOTD art: a manual dnf update looks like drift to AIDE and blocks the unattended refresh
 IFS= read -r -d '' MOTD_AIDE_NOTE << EOF || true
-
-NOTE: after a manual "dnf update", review the AIDE drift in ${AIDE_LOG},
-then run "sudo ${AIDE_HELPER} accept". Until then, dnf-automatic will not refresh the AIDE baseline.
+  - After a manual "dnf update", review the AIDE drift in ${AIDE_LOG},
+    then run "sudo ${AIDE_HELPER} accept". Until then, dnf-automatic will not refresh the AIDE baseline.
+EOF
+# Shown under the MOTD art: the service user has no direct login, so say how to reach it
+IFS= read -r -d '' MOTD_POPOLA_NOTE << EOF || true
+  - To switch to the ${SERVICE_USER} service user, run "sudo -u ${SERVICE_USER} /bin/bash -l".
 EOF
 LOGROTATE_AIDE_CONF="/etc/logrotate.d/99-${FILE_MIDFIX}-aide"
 IFS= read -r -d '' LOGROTATE_AIDE_TEXT << EOF || true
@@ -611,7 +614,7 @@ mount -o "remount,${SHM_REMOUNT_OPTS}" /dev/shm || true
 # == SECURITY & IAM HARDENING ==
 
 # MOTD (Message of the Day) displayed after login
-printf '%s\n%s' "${MOTD_TEXT}" "${MOTD_AIDE_NOTE}" > "${MOTD_PATH}"
+printf '%s\n\nNotes:\n%s%s' "${MOTD_TEXT}" "${MOTD_AIDE_NOTE}" "${MOTD_POPOLA_NOTE}" > "${MOTD_PATH}"
 chmod 0644 "${MOTD_PATH}"
 
 # Sudo configuration via sudoers.d
@@ -762,6 +765,38 @@ passwd -l "${SERVICE_USER}"
 # Allow admin user to open a login shell as the service user without a password.
 # Runs bash directly, because su/sudo -i would use the nologin shell and su would ask for the locked password.
 install_validated 0440 "${SERVICE_SUDOERS_CONF}" "${SERVICE_SUDOERS_TEXT}"$'\n' visudo -c -f
+
+# == REMOVE OTHER LOGIN USERS ==
+# Runs last among the account steps, so the admin key, sudo and sshd are already in place.
+# Only regular accounts are candidates: UID within UID_MIN..UID_MAX from login.defs (system accounts are below,
+# nobody is above). Read from /etc/passwd, not getent, so sssd/LDAP users are never enumerated.
+# Preview only: PRUNE_DRY_RUN=1 bash alma-setup.sh
+PRUNE_DRY_RUN="${PRUNE_DRY_RUN:-0}"
+LOGIN_UID_MIN="$(awk '$1=="UID_MIN"{print $2}' /etc/login.defs)"
+LOGIN_UID_MAX="$(awk '$1=="UID_MAX"{print $2}' /etc/login.defs)"
+LOGIN_UID_MIN="${LOGIN_UID_MIN:-1000}"
+LOGIN_UID_MAX="${LOGIN_UID_MAX:-60000}"
+KEEP_USERS=("${ADMIN_USER}" "${SERVICE_USER}" "${SUDO_USER:-}")
+while IFS= read -r stale_user; do
+  for keep in "${KEEP_USERS[@]}"; do
+    [[ "${stale_user}" == "${keep}" ]] && continue 2
+  done
+  if [[ "${PRUNE_DRY_RUN}" == "1" ]]; then
+    echo "DRY RUN: would remove user ${stale_user}"
+    continue
+  fi
+  echo "Removing user ${stale_user}"
+  usermod -L -s /sbin/nologin "${stale_user}"
+  pkill -KILL -u "${stale_user}" || true
+  # pkill returns before the processes are gone and userdel refuses while any remain: wait up to ~10s
+  for _ in $(seq 1 50); do
+    pgrep -u "${stale_user}" > /dev/null || break
+    sleep 0.2
+  done
+  # Drop sudoers grants that name this user (e.g. cloud-init's 90-cloud-init-users)
+  { grep -lE "^${stale_user}[[:space:]]" "${SUDOERS_DIR}"/* 2>/dev/null || true; } | xargs -r rm -f
+  userdel -r "${stale_user}" || echo "WARNING: could not fully remove ${stale_user}" >&2
+done < <(awk -F: -v min="${LOGIN_UID_MIN}" -v max="${LOGIN_UID_MAX}" '$3>=min && $3<=max {print $1}' /etc/passwd)
 
 # == LOGGING ==
 

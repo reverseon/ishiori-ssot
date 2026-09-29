@@ -1,13 +1,13 @@
 #cloud-config
 
-package_update: true
-package_upgrade: true
-
 packages:
   - curl
+
+users: []
 
 ssh_pwauth: false
 disable_root: true
 
 runcmd:
-  - 'curl -s "https://raw.githubusercontent.com/reverseon/ishiori-ssot/refs/heads/main/portable/scripts/posix/setup.sh" | bash'
+  - 'echo "Running setup.sh..."'
+  - 'curl -s "https://raw.githubusercontent.com/reverseon/ishiori-ssot/refs/heads/main/portable/scripts/posix/alma-setup.sh" | bash'
