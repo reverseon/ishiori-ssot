@@ -526,8 +526,8 @@ WantedBy=timers.target
 UNIT
 
 # == PACKAGE INSTALLATION ==
-# Update system packages and install base tooling
-dnf update -y
+# Apply security updates only (same policy as dnf-automatic below), then install base tooling
+dnf upgrade --security -y
 # htop is not in the AlmaLinux base repos, it ships in EPEL
 dnf install -y epel-release
 dnf install -y "${PACKAGES[@]}"
