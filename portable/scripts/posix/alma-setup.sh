@@ -11,7 +11,7 @@
 #                    hostname and /etc/hosts are left untouched.
 #   STATIC_IP        Static IPv4 address in CIDR form, e.g. 192.168.1.50/24. Unset keeps the current
 #                    network config; otherwise a NetworkManager keyfile is written and activated last.
-#   STATIC_GATEWAY   IPv4 gateway. Required when STATIC_IP is set.
+#   STATIC_GATEWAY   IPv4 gateway. Empty (default) = gateway of the current default route on STATIC_IFACE.
 #   STATIC_DNS       Space-separated DNS servers, e.g. "1.1.1.1 9.9.9.9". Optional.
 #   STATIC_IFACE     Interface to configure. Empty (default) = interface of the current default route.
 #   PRUNE_DRY_RUN    1 = only list the login users that would be removed, remove nothing (default: 0).
@@ -44,7 +44,7 @@ HOSTS_MARKER="# ${FILE_MIDFIX}-hostname"
 # Static IPv4 (empty STATIC_IP leaves the network config alone), applied as a NetworkManager keyfile
 # Override at run time: sudo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 bash alma-setup.sh
 STATIC_IP="${STATIC_IP-}"            # CIDR, e.g. 192.168.1.50/24
-STATIC_GATEWAY="${STATIC_GATEWAY-}"  # required when STATIC_IP is set
+STATIC_GATEWAY="${STATIC_GATEWAY-}"  # empty = gateway of the current default route
 STATIC_DNS="${STATIC_DNS-}"          # space-separated, e.g. "1.1.1.1 9.9.9.9"
 STATIC_IFACE="${STATIC_IFACE-}"      # empty = interface of the current default route
 # Priority above the stock profile (0) so this one wins; the existing profiles and cloud-init config are not touched
@@ -616,11 +616,14 @@ EOF
 # Every input check runs here, before the first change to the system, so a bad value aborts a clean run.
 if [ -n "${STATIC_IP}" ]; then
   [[ "${STATIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || { echo "STATIC_IP must be IPv4 CIDR (e.g. 192.168.1.50/24), got: ${STATIC_IP}" >&2; exit 1; }
-  [ -n "${STATIC_GATEWAY}" ] || { echo "STATIC_GATEWAY is required when STATIC_IP is set" >&2; exit 1; }
   if [ -z "${STATIC_IFACE}" ]; then
     STATIC_IFACE="$(ip -4 route show default | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
   fi
   [ -n "${STATIC_IFACE}" ] || { echo "Could not detect the default-route interface, set STATIC_IFACE" >&2; exit 1; }
+  if [ -z "${STATIC_GATEWAY}" ]; then
+    STATIC_GATEWAY="$(ip -4 route show default dev "${STATIC_IFACE}" | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}')"
+  fi
+  [ -n "${STATIC_GATEWAY}" ] || { echo "Could not detect the default gateway on ${STATIC_IFACE}, set STATIC_GATEWAY" >&2; exit 1; }
 fi
 
 # Admin public key: download and validate now, installed later
