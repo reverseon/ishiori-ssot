@@ -612,6 +612,29 @@ IFS= read -r -d '' REBOOT_DNF_DROPIN_TEXT << EOF || true
 ExecStartPost=-${REBOOT_CHECK_BIN}
 EOF
 
+# == PRE-FLIGHT CHECKS ==
+# Every input check runs here, before the first change to the system, so a bad value aborts a clean run.
+if [ -n "${STATIC_IP}" ]; then
+  [[ "${STATIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || { echo "STATIC_IP must be IPv4 CIDR (e.g. 192.168.1.50/24), got: ${STATIC_IP}" >&2; exit 1; }
+  [ -n "${STATIC_GATEWAY}" ] || { echo "STATIC_GATEWAY is required when STATIC_IP is set" >&2; exit 1; }
+  if [ -z "${STATIC_IFACE}" ]; then
+    STATIC_IFACE="$(ip -4 route show default | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
+  fi
+  [ -n "${STATIC_IFACE}" ] || { echo "Could not detect the default-route interface, set STATIC_IFACE" >&2; exit 1; }
+fi
+
+# Admin public key: download and validate now, installed later
+KEY_TMP="$(mktemp)"
+trap 'rm -f "${KEY_TMP}"' EXIT
+curl -fsSL "${ADMIN_PUBKEY_URL}" -o "${KEY_TMP}"
+KEY_INFO="$(ssh-keygen -l -f "${KEY_TMP}")"
+# sshd accepts only ed25519 and password auth is off, so any other key type would lock the admin out
+if [ -z "${KEY_INFO}" ] || grep -qv '(ED25519)$' <<< "${KEY_INFO}"; then
+  echo "Admin public key must be ssh-ed25519 only, got:" >&2
+  echo "${KEY_INFO}" >&2
+  exit 1
+fi
+
 # == HOSTNAME ==
 if [ -n "${SYSTEM_STATIC_HOSTNAME}" ]; then
   hostnamectl set-hostname "${SYSTEM_STATIC_HOSTNAME}"
@@ -782,17 +805,6 @@ install_validated 0440 "${ADMIN_SUDOERS_CONF}" "${ADMIN_SUDOERS_TEXT}"$'\n' visu
 
 # Authorize the master public key for the admin user
 install -d -m 0700 -o "${ADMIN_USER}" -g "${ADMIN_USER}" "${ADMIN_SSH_DIR}"
-KEY_TMP="$(mktemp)"
-trap 'rm -f "${KEY_TMP}"' EXIT
-curl -fsSL "${ADMIN_PUBKEY_URL}" -o "${KEY_TMP}"
-# Abort before touching sshd if the download is not a valid public key
-KEY_INFO="$(ssh-keygen -l -f "${KEY_TMP}")"
-# sshd accepts only ed25519 and password auth is off, so any other key type would lock the admin out
-if [ -z "${KEY_INFO}" ] || grep -qv '(ED25519)$' <<< "${KEY_INFO}"; then
-  echo "Admin public key must be ssh-ed25519 only, got:" >&2
-  echo "${KEY_INFO}" >&2
-  exit 1
-fi
 install -m 0600 -o "${ADMIN_USER}" -g "${ADMIN_USER}" "${KEY_TMP}" "${ADMIN_AUTHORIZED_KEYS}"
 restorecon -R "${ADMIN_SSH_DIR}" 2>/dev/null || true
 
@@ -931,12 +943,6 @@ systemctl restart nftables
 # Written as a NetworkManager keyfile here (before AIDE, so the baseline includes it).
 # Activated as the last step of the script, see STATIC IP ACTIVATION.
 if [ -n "${STATIC_IP}" ]; then
-  [[ "${STATIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || { echo "STATIC_IP must be IPv4 CIDR (e.g. 192.168.1.50/24), got: ${STATIC_IP}" >&2; exit 1; }
-  [ -n "${STATIC_GATEWAY}" ] || { echo "STATIC_GATEWAY is required when STATIC_IP is set" >&2; exit 1; }
-  if [ -z "${STATIC_IFACE}" ]; then
-    STATIC_IFACE="$(ip -4 route show default | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
-  fi
-  [ -n "${STATIC_IFACE}" ] || { echo "Could not detect the default-route interface, set STATIC_IFACE" >&2; exit 1; }
   STATIC_DNS_LINE=""
   if [ -n "${STATIC_DNS}" ]; then
     STATIC_DNS_LINE="dns=${STATIC_DNS// /;};"
