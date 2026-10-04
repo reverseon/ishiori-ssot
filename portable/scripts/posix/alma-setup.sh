@@ -1,4 +1,21 @@
 #!/bin/bash
+# AlmaLinux setup and hardening script. Run as root (sudo); safe to re-run.
+#
+# Variables you can override from the environment (put them AFTER sudo, which resets the environment):
+#   sudo SYSTEM_HOSTNAME=foo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 bash alma-setup.sh
+#
+#   SYSTEM_HOSTNAME  Short hostname (default: YoRHa). Used for the /etc/hosts alias and to derive SYSTEM_FQDN.
+#   SYSTEM_DOMAIN    Domain appended to the lowercased hostname to derive SYSTEM_FQDN (default: node.ishiori.net).
+#   SYSTEM_FQDN      Static hostname set via hostnamectl (default: <hostname>.<domain>). Set to "" to leave
+#                    the hostname and /etc/hosts untouched.
+#   STATIC_IP        Static IPv4 address in CIDR form, e.g. 192.168.1.50/24. Empty (default) keeps the
+#                    current network config; otherwise a NetworkManager keyfile is written and activated last.
+#   STATIC_GATEWAY   IPv4 gateway. Required when STATIC_IP is set.
+#   STATIC_DNS       Space-separated DNS servers, e.g. "1.1.1.1 9.9.9.9". Optional.
+#   STATIC_IFACE     Interface to configure. Empty (default) = interface of the current default route.
+#   PRUNE_DRY_RUN    1 = only list the login users that would be removed, remove nothing (default: 0).
+#
+# Everything else below (accounts, SSH, firewall, packages, ...) is plain configuration: edit it in place.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -7,6 +24,30 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 FILE_MIDFIX="from-setup"
+
+# Hostname: short name and FQDN, mirroring cloud-init's local-hostname / hostname in meta-data
+# (not named HOSTNAME, which is a bash builtin variable). An empty SYSTEM_FQDN keeps the current hostname.
+# SYSTEM_FQDN defaults to <lowercased hostname>.<domain>; set it explicitly to override.
+# Override at run time: sudo SYSTEM_HOSTNAME=myhost bash alma-setup.sh
+SYSTEM_HOSTNAME="${SYSTEM_HOSTNAME-YoRHa}"
+SYSTEM_DOMAIN="${SYSTEM_DOMAIN-node.ishiori.net}"
+if [ -z "${SYSTEM_FQDN+x}" ] && [ -n "${SYSTEM_HOSTNAME}" ] && [ -n "${SYSTEM_DOMAIN}" ]; then
+  SYSTEM_FQDN="${SYSTEM_HOSTNAME,,}.${SYSTEM_DOMAIN}"
+fi
+SYSTEM_FQDN="${SYSTEM_FQDN-}"
+HOSTS_FILE="/etc/hosts"
+HOSTS_MARKER="# ${FILE_MIDFIX}-hostname"
+
+# Static IPv4 (empty STATIC_IP leaves the network config alone), applied as a NetworkManager keyfile
+# Override at run time: sudo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 bash alma-setup.sh
+STATIC_IP="${STATIC_IP-}"            # CIDR, e.g. 192.168.1.50/24
+STATIC_GATEWAY="${STATIC_GATEWAY-}"  # required when STATIC_IP is set
+STATIC_DNS="${STATIC_DNS-}"          # space-separated, e.g. "1.1.1.1 9.9.9.9"
+STATIC_IFACE="${STATIC_IFACE-}"      # empty = interface of the current default route
+# Priority above the stock profile (0) so this one wins; the existing profiles and cloud-init config are not touched
+STATIC_NM_PRIORITY=100
+STATIC_NM_CONF="/etc/NetworkManager/system-connections/${FILE_MIDFIX}-static.nmconnection"
+STATIC_APPLY_DELAY="5s"
 
 # Accounts
 ADMIN_USER="devola"
@@ -568,6 +609,17 @@ IFS= read -r -d '' REBOOT_DNF_DROPIN_TEXT << EOF || true
 ExecStartPost=-${REBOOT_CHECK_BIN}
 EOF
 
+# == HOSTNAME ==
+# Static hostname is the FQDN (RHEL convention); the short name is derived from it
+if [ -n "${SYSTEM_FQDN}" ]; then
+  hostnamectl set-hostname "${SYSTEM_FQDN}"
+fi
+# Self-resolution without DNS: one marked line, rewritten on every run
+sed -i "\|${HOSTS_MARKER}\$|d" "${HOSTS_FILE}"
+if [ -n "${SYSTEM_FQDN}" ]; then
+  echo "127.0.1.1 ${SYSTEM_FQDN} ${SYSTEM_HOSTNAME} ${HOSTS_MARKER}" >> "${HOSTS_FILE}"
+fi
+
 # == PACKAGE INSTALLATION ==
 # Security updates only (same policy as dnf-automatic), then base tooling
 dnf upgrade --security -y
@@ -874,6 +926,42 @@ systemctl mask firewalld 2>/dev/null || true
 systemctl enable nftables
 systemctl restart nftables
 
+# == STATIC IP ==
+# Written as a NetworkManager keyfile here (before AIDE, so the baseline includes it).
+# Activated as the last step of the script, see STATIC IP ACTIVATION.
+if [ -n "${STATIC_IP}" ]; then
+  [[ "${STATIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || { echo "STATIC_IP must be IPv4 CIDR (e.g. 192.168.1.50/24), got: ${STATIC_IP}" >&2; exit 1; }
+  [ -n "${STATIC_GATEWAY}" ] || { echo "STATIC_GATEWAY is required when STATIC_IP is set" >&2; exit 1; }
+  if [ -z "${STATIC_IFACE}" ]; then
+    STATIC_IFACE="$(ip -4 route show default | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
+  fi
+  [ -n "${STATIC_IFACE}" ] || { echo "Could not detect the default-route interface, set STATIC_IFACE" >&2; exit 1; }
+  STATIC_DNS_LINE=""
+  if [ -n "${STATIC_DNS}" ]; then
+    STATIC_DNS_LINE="dns=${STATIC_DNS// /;};"
+  fi
+  IFS= read -r -d '' STATIC_NM_TEXT << EOF || true
+[connection]
+id=${FILE_MIDFIX}-static
+type=ethernet
+interface-name=${STATIC_IFACE}
+autoconnect=true
+autoconnect-priority=${STATIC_NM_PRIORITY}
+
+[ipv4]
+method=manual
+address1=${STATIC_IP},${STATIC_GATEWAY}
+${STATIC_DNS_LINE}
+
+[ipv6]
+method=auto
+EOF
+  printf '%s\n' "${STATIC_NM_TEXT}" > "${STATIC_NM_CONF}"
+  chmod 0600 "${STATIC_NM_CONF}"
+  restorecon "${STATIC_NM_CONF}" 2>/dev/null || true
+  nmcli connection reload
+fi
+
 # == FILE INTEGRITY (AIDE) ==
 # Daily integrity check via systemd timer (see AIDE_HELPER_TEXT)
 printf '%s' "${AIDE_HELPER_TEXT}" > "${AIDE_HELPER}"
@@ -900,3 +988,12 @@ if [ ! -f "${AIDE_DB}" ]; then
   mv "${AIDE_DB_NEW}" "${AIDE_DB}"
 fi
 systemctl start aide-check.timer
+
+# == STATIC IP ACTIVATION ==
+# Last step: the address change drops an SSH session on the old address, so nothing may run after it.
+# Delayed via a transient systemd unit so this script exits cleanly first.
+if [ -n "${STATIC_IP}" ]; then
+  systemd-run --unit="${FILE_MIDFIX}-static-ip-apply" --on-active="${STATIC_APPLY_DELAY}" \
+    nmcli connection up "${FILE_MIDFIX}-static" > /dev/null
+  echo "Static IP ${STATIC_IP} on ${STATIC_IFACE} will activate in ${STATIC_APPLY_DELAY}; an SSH session on the old address will drop"
+fi
