@@ -9,5 +9,4 @@ ssh_pwauth: false
 disable_root: true
 
 runcmd:
-  - 'echo "Running setup.sh..."'
-  - 'curl -s "https://raw.githubusercontent.com/reverseon/ishiori-ssot/refs/heads/main/portable/scripts/posix/alma-setup.sh" | bash'
+  - 'echo "Cloud-init completed successfully!"'  
