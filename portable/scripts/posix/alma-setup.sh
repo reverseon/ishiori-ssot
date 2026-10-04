@@ -4,12 +4,13 @@
 # Variables you can override from the environment (put them AFTER sudo, which resets the environment):
 #   sudo SYSTEM_HOSTNAME=foo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 bash alma-setup.sh
 #
-#   SYSTEM_HOSTNAME  Short hostname (default: YoRHa). Used for the /etc/hosts alias and to derive SYSTEM_FQDN.
-#   SYSTEM_DOMAIN    Domain appended to the lowercased hostname to derive SYSTEM_FQDN (default: node.ishiori.net).
-#   SYSTEM_FQDN      Static hostname set via hostnamectl (default: <hostname>.<domain>). Set to "" to leave
-#                    the hostname and /etc/hosts untouched.
-#   STATIC_IP        Static IPv4 address in CIDR form, e.g. 192.168.1.50/24. Empty (default) keeps the
-#                    current network config; otherwise a NetworkManager keyfile is written and activated last.
+#   SYSTEM_HOSTNAME  Short hostname. Used for the /etc/hosts alias and to derive SYSTEM_FQDN.
+#   SYSTEM_DOMAIN    Domain appended to the lowercased hostname to derive SYSTEM_FQDN.
+#   SYSTEM_FQDN      Static hostname set via hostnamectl. Derived as <hostname>.<domain> when both are set.
+#                    If no FQDN results, the short hostname is used. With none of the three set, the
+#                    hostname and /etc/hosts are left untouched.
+#   STATIC_IP        Static IPv4 address in CIDR form, e.g. 192.168.1.50/24. Unset keeps the current
+#                    network config; otherwise a NetworkManager keyfile is written and activated last.
 #   STATIC_GATEWAY   IPv4 gateway. Required when STATIC_IP is set.
 #   STATIC_DNS       Space-separated DNS servers, e.g. "1.1.1.1 9.9.9.9". Optional.
 #   STATIC_IFACE     Interface to configure. Empty (default) = interface of the current default route.
@@ -26,15 +27,17 @@ fi
 FILE_MIDFIX="from-setup"
 
 # Hostname: short name and FQDN, mirroring cloud-init's local-hostname / hostname in meta-data
-# (not named HOSTNAME, which is a bash builtin variable). An empty SYSTEM_FQDN keeps the current hostname.
-# SYSTEM_FQDN defaults to <lowercased hostname>.<domain>; set it explicitly to override.
-# Override at run time: sudo SYSTEM_HOSTNAME=myhost bash alma-setup.sh
-SYSTEM_HOSTNAME="${SYSTEM_HOSTNAME-YoRHa}"
-SYSTEM_DOMAIN="${SYSTEM_DOMAIN-node.ishiori.net}"
-if [ -z "${SYSTEM_FQDN+x}" ] && [ -n "${SYSTEM_HOSTNAME}" ] && [ -n "${SYSTEM_DOMAIN}" ]; then
+# (not named HOSTNAME, which is a bash builtin variable). Nothing is changed unless a variable is set.
+# SYSTEM_FQDN, if empty and both SYSTEM_HOSTNAME and SYSTEM_DOMAIN are set, becomes <lowercased hostname>.<domain>.
+# Override at run time: sudo SYSTEM_HOSTNAME=myhost SYSTEM_DOMAIN=example.net bash alma-setup.sh
+SYSTEM_HOSTNAME="${SYSTEM_HOSTNAME-}"
+SYSTEM_DOMAIN="${SYSTEM_DOMAIN-}"
+SYSTEM_FQDN="${SYSTEM_FQDN-}"
+if [ -z "${SYSTEM_FQDN}" ] && [ -n "${SYSTEM_HOSTNAME}" ] && [ -n "${SYSTEM_DOMAIN}" ]; then
   SYSTEM_FQDN="${SYSTEM_HOSTNAME,,}.${SYSTEM_DOMAIN}"
 fi
-SYSTEM_FQDN="${SYSTEM_FQDN-}"
+# Static hostname: the FQDN if there is one (RHEL convention), else the short name
+SYSTEM_STATIC_HOSTNAME="${SYSTEM_FQDN:-${SYSTEM_HOSTNAME}}"
 HOSTS_FILE="/etc/hosts"
 HOSTS_MARKER="# ${FILE_MIDFIX}-hostname"
 
@@ -610,14 +613,12 @@ ExecStartPost=-${REBOOT_CHECK_BIN}
 EOF
 
 # == HOSTNAME ==
-# Static hostname is the FQDN (RHEL convention); the short name is derived from it
-if [ -n "${SYSTEM_FQDN}" ]; then
-  hostnamectl set-hostname "${SYSTEM_FQDN}"
-fi
-# Self-resolution without DNS: one marked line, rewritten on every run
-sed -i "\|${HOSTS_MARKER}\$|d" "${HOSTS_FILE}"
-if [ -n "${SYSTEM_FQDN}" ]; then
-  echo "127.0.1.1 ${SYSTEM_FQDN} ${SYSTEM_HOSTNAME} ${HOSTS_MARKER}" >> "${HOSTS_FILE}"
+if [ -n "${SYSTEM_STATIC_HOSTNAME}" ]; then
+  hostnamectl set-hostname "${SYSTEM_STATIC_HOSTNAME}"
+  # Self-resolution without DNS: one marked line, rewritten on every run
+  sed -i "\|${HOSTS_MARKER}\$|d" "${HOSTS_FILE}"
+  hosts_names="$(xargs <<< "${SYSTEM_FQDN} ${SYSTEM_HOSTNAME}")"
+  echo "127.0.1.1 ${hosts_names} ${HOSTS_MARKER}" >> "${HOSTS_FILE}"
 fi
 
 # == PACKAGE INSTALLATION ==
