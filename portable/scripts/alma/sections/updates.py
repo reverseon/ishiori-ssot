@@ -34,14 +34,15 @@ def actions(c: Config):
             text=texts.daily_timer("Daily reboot-required check"),
         ),
         EnsureDir(
-            path=c.aide_dnf_dropin_dir,
+            path=c.dnf_dropin_dir,
         ),
         WriteFile(
-            path=f"{c.aide_dnf_dropin_dir}/98-{MIDFIX}-reboot-check.conf",
+            path=f"{c.dnf_dropin_dir}/98-{MIDFIX}-reboot-check.conf",
             text=texts.reboot_dnf_dropin(c),
         ),
         Systemctl(
             verb="daemon_reload",
+            units=[service, timer, "dnf-automatic.service"],
         ),
         Systemctl(
             verb="enable_now",

@@ -108,6 +108,7 @@ def actions(c: Config):
         ),
         Systemctl(
             verb="daemon_reload",
+            units=[c.su_guard_service, c.su_guard_path, c.su_guard_timer],
         ),
         Systemctl(
             verb="enable_now",

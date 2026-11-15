@@ -128,13 +128,16 @@ class WriteFile(Action):
 
     With `validator` (e.g. ["visudo", "-c", "-f"]) the text is validated from a temp file first and goes live
     via `<path>.new` + rename, so a bad file never takes effect (bash: install_validated).
+    `verify` runs in the postcheck once the file is in place and raises if the result is not acceptable.
     """
 
     def __init__(self, path: str | Path, text: str, mode: int | None = 0o644, owner: str | None = "root",
-                 group: str | None = "root", relabel: bool = False, validator: Sequence[str] | None = None):
+                 group: str | None = "root", relabel: bool = False, validator: Sequence[str] | None = None,
+                 verify: Callable[[], None] | None = None):
         super().__init__(f"file {path}")
         self.path, self.text, self.mode = Path(path), text, mode
         self.owner, self.group, self.relabel, self.validator = owner, group, relabel, validator
+        self.verify = verify
 
     def precheck(self) -> bool:
         if not self.path.is_file():
@@ -172,6 +175,8 @@ class WriteFile(Action):
     def postcheck(self) -> bool:
         held = self.precheck()
         self.postcheck_detail = self.precheck_detail
+        if held and self.verify:
+            self.verify()
         return held
 
 
@@ -213,7 +218,8 @@ _SYSTEMCTL = {
     "restart": (["restart"], None, "active"),
     "mask": (["mask"], "masked", "masked"),
     "disable_now": (["disable", "--now"], "disabled+inactive", "disabled+inactive"),
-    "daemon_reload": (["daemon-reload"], None, None),
+    # `units` are not passed to the command: they are the units that must be current afterwards
+    "daemon_reload": (["daemon-reload"], None, "reloaded"),
 }
 
 
@@ -232,6 +238,7 @@ class Systemctl(Action):
             "enabled": lambda u: ok("systemctl", "is-enabled", "--quiet", u),
             "active": lambda u: ok("systemctl", "is-active", "--quiet", u),
             "enabled+active": lambda u: ok("systemctl", "is-enabled", "--quiet", u) and ok("systemctl", "is-active", "--quiet", u),
+            "reloaded": lambda u: out("systemctl", "show", "-p", "NeedDaemonReload", "--value", u) == "no",
             "masked": lambda u: out("systemctl", "is-enabled", u) == "masked",
             "disabled+inactive": lambda u: not ok("systemctl", "is-enabled", "--quiet", u) and not ok("systemctl", "is-active", "--quiet", u),
         }
@@ -243,7 +250,7 @@ class Systemctl(Action):
         return held
 
     def run(self) -> None:
-        sh("systemctl", *self.args, *self.units)
+        sh("systemctl", *self.args, *(() if self.args == ["daemon-reload"] else self.units))
 
     def verifiable(self) -> bool:
         return self.post_state is not None

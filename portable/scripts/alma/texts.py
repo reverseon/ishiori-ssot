@@ -111,11 +111,9 @@ def ssh_banner() -> str:
 
 
 def motd(c: Config) -> str:
-    # Notes under the art: a manual dnf update looks like drift to AIDE, and the service user has no direct login
-    aide_note = (f'  - After a manual "dnf update", review the AIDE drift in {c.aide_log},\n'
-                 f'    then run "sudo {c.aide_helper} accept". Until then, dnf-automatic will not refresh the AIDE baseline.\n')
+    # Note under the art: the service user has no direct login
     popola_note = f'  - To switch to the {c.service_user} service user, run "sudo -u {c.service_user} /bin/bash -l".\n'
-    return f"{art.MOTD}\n\nNotes:\n{aide_note}{popola_note}"
+    return f"{art.MOTD}\n\nNotes:\n{popola_note}"
 
 
 FAILLOCK_CONF = """\
@@ -230,36 +228,7 @@ Options=mode=1777,nosuid,nodev,noexec
 """
 
 
-def modprobe_blacklist(c: Config) -> str:
-    # "install ... /bin/false" also blocks an explicit modprobe
-    return "".join(f"blacklist {m}\ninstall {m} /bin/false\n" for m in c.blacklisted_modules)
-
-
-def allow_list(c: Config) -> str:
-    return "".join(f"{u}\n" for u in c.cron_allowed_users)
-
-
 # ---- logging ---------------------------------------------------------------------------------------
-
-def rsyslog_nft(c: Config) -> str:
-    return f':msg, contains, "[nftables] DROP:" {c.nft_log}\n& stop\n'
-
-
-def rsyslog_popola(c: Config) -> str:
-    # Matched on sudo's own syslog line (root-written, unforgeable by the service user); no "& stop",
-    # so the line still reaches /var/log/secure.
-    return f':msg, contains, "USER={c.service_user} ; COMMAND=" {c.popola_log}\n'
-
-
-def logrotate(log: str, frequency: str, rotate: int, *, compress: bool = True, reload_rsyslog: bool = False) -> str:
-    """One stanza per log (logrotate rejects a file that appears in more than one)."""
-    lines = [f"{log} {{", f"  {frequency}", f"  rotate {rotate}", "  missingok", "  notifempty"]
-    if compress:
-        lines += ["  compress", "  delaycompress"]
-    if reload_rsyslog:
-        lines += ["  postrotate", "    systemctl reload rsyslog > /dev/null 2>&1 || true", "  endscript"]
-    return "\n".join(lines + ["}"]) + "\n"
-
 
 # ---- firewall --------------------------------------------------------------------------------------
 
@@ -370,75 +339,3 @@ def reboot_dnf_dropin(c: Config) -> str:
 
 
 # ---- AIDE ------------------------------------------------------------------------------------------
-
-def aide_helper(c: Config) -> str:
-    """One wrapper for all modes. aide exits 1-7 on differences and 8+ on errors; differences are a finding,
-    not a unit failure, so only errors exit non-zero. Findings go to a log file and to syslog (authpriv).
-
-    "check" only reports. "update" refreshes the baseline; dnf-automatic runs check BEFORE its transaction
-    (findings are real) and update AFTER (package changes are expected). If the pre-check found drift,
-    "update" leaves the baseline alone (drift flag) so the daily check keeps reporting until an admin
-    reviews and runs "accept" (refresh baseline, clear the flag). All modes share a lock.
-    """
-    return render("""\
-#!/bin/bash
-set -u
-mode="${1:-check}"
-mkdir -p "@@log_dir@@"
-exec 9> "/run/@@midfix@@-aide.lock"
-flock 9
-report="$(mktemp)"
-trap 'rm -f "${report}"' EXIT
-# A refresh would absorb existing drift, so "update" refuses while @@flag@@ exists.
-# "check" sets it on drift or error and clears it only on a clean run.
-if [ "${mode}" = "update" ] && [ -e "@@flag@@" ]; then
-  echo "=== $(date -Is) aide update skipped: unreviewed drift, baseline NOT refreshed ===" >> "@@log@@"
-  logger -t @@tag@@ -p authpriv.err "baseline NOT refreshed: unreviewed drift since last clean check, see @@log@@; review then run: @@helper@@ accept"
-  exit 0
-fi
-case "${mode}" in
-  check) aide --check > "${report}" 2>&1 ;;
-  update|accept) aide --update > "${report}" 2>&1 ;;
-  *) echo "usage: $0 check|update|accept" >&2; exit 2 ;;
-esac
-rc=$?
-{ echo "=== $(date -Is) aide ${mode} rc=${rc} ==="; cat "${report}"; } >> "@@log@@"
-if [ "${rc}" -ge 8 ]; then
-  [ "${mode}" = "check" ] && touch "@@flag@@"
-  logger -t @@tag@@ -p authpriv.err "aide ${mode} failed (rc=${rc}), see @@log@@"
-  exit "${rc}"
-fi
-if [ "${mode}" = "update" ]; then
-  mv -f "@@db_new@@" "@@db@@"
-  logger -t @@tag@@ -p authpriv.info "baseline refreshed after package update (rc=${rc})"
-elif [ "${mode}" = "accept" ]; then
-  mv -f "@@db_new@@" "@@db@@"
-  rm -f "@@flag@@"
-  logger -t @@tag@@ -p authpriv.notice "baseline accepted by admin, drift flag cleared (rc=${rc})"
-elif [ "${rc}" -eq 0 ]; then
-  rm -f "@@flag@@"
-  logger -t @@tag@@ -p authpriv.info "no changes since baseline"
-else
-  touch "@@flag@@"
-  logger -t @@tag@@ -p authpriv.warning "changes since baseline (rc=${rc}), see @@log@@"
-fi
-exit 0
-""", log_dir=c.aide_log_dir, midfix=MIDFIX, flag=c.aide_drift_flag, log=c.aide_log, tag=c.aide_tag,
-        helper=c.aide_helper, db=c.aide_db, db_new=c.aide_db_new)
-
-
-def aide_service(c: Config) -> str:
-    return f"""\
-[Unit]
-Description=AIDE integrity check
-
-[Service]
-Type=oneshot
-ExecStart={c.aide_helper} check
-"""
-
-
-def aide_dnf_dropin(c: Config) -> str:
-    # Report drift just before dnf-automatic changes files, refresh the baseline just after.
-    # The leading "-" keeps an AIDE failure from blocking or failing the update run.
-    return f"[Service]\nExecStartPre=-{c.aide_helper} check\nExecStartPost=-{c.aide_helper} update\n"

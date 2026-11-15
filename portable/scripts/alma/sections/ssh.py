@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 import texts
-from actions import Cmd, EnsureDir, Func, Systemctl, WriteFile, sh
+from actions import EnsureDir, Func, Systemctl, WriteFile, sh
 from config import Config
 
 log = logging.getLogger(__name__)
@@ -48,6 +48,15 @@ def _verify_effective(c: Config) -> None:
         raise RuntimeError(f"sshd listens on unexpected port(s): {' '.join(ports)} (expected only {c.ssh_port})")
 
 
+def _other_ports_gone(c: Config) -> bool:
+    """Postcheck of the Port cleanup. Once our drop-in exists, the whole effective config is checked too."""
+    if _with_port(c):
+        return False
+    if Path(c.ssh_conf).is_file():
+        _verify_effective(c)
+    return True
+
+
 def actions(c: Config):
     return [
         EnsureDir(
@@ -58,31 +67,21 @@ def actions(c: Config):
             path=c.ssh_banner,
             text=texts.ssh_banner(),
         ),
-        # The drop-in is syntax-checked standalone, then installed
+        # Before our drop-in, so its postcheck sees the final state. On a first run the drop-in does not exist yet
+        Func(
+            name="disable other Port directives",
+            run=lambda: _disable_other_ports(c),
+            pre=lambda: not _with_port(c),
+            post=lambda: _other_ports_gone(c),
+        ),
+        # Syntax-checked standalone before install; afterwards sshd -T (which implies -t) checks the whole
+        # installed config and that nothing overrides our values
         WriteFile(
             path=c.ssh_conf,
             text=texts.ssh_conf(c),
             mode=0o644,
             validator=["sshd", "-t", "-f"],
-        ),
-        # Check the installed result as a whole before restarting
-        Cmd(
-            name="sshd -t",
-            argv=["sshd", "-t"],
-        ),
-        Func(
-            name="disable other Port directives",
-            run=lambda: _disable_other_ports(c),
-            pre=lambda: not _with_port(c),
-            post=lambda: not _with_port(c),
-        ),
-        Cmd(
-            name="sshd -t (after Port cleanup)",
-            argv=["sshd", "-t"],
-        ),
-        Func(
-            name="verify effective sshd config",
-            run=lambda: _verify_effective(c),
+            verify=lambda: _verify_effective(c),
         ),
         Systemctl(
             verb="restart",

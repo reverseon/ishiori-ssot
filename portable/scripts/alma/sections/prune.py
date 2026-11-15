@@ -1,6 +1,6 @@
 """Remove every other regular login user. Runs last among the account steps.
 
-Only regular accounts (UID_MIN..UID_MAX from login.defs) are candidates. Preview: PRUNE_DRY_RUN=1.
+Only regular accounts (UID_MIN..UID_MAX from login.defs) are candidates. Preview: --check lists who would be removed.
 """
 
 import logging
@@ -49,18 +49,19 @@ def _remove(c: Config, user: str) -> None:
 
 def _run(c: Config) -> None:
     for user in stale_users(c):
-        if c.prune_dry_run:
-            log.info("DRY RUN: would remove user %s", user)
-        else:
-            _remove(c, user)
+        _remove(c, user)
 
 
 def actions(c: Config):
-    return [
-        Func(
-            name="remove other login users",
-            run=lambda: _run(c),
-            pre=lambda: not stale_users(c),
-            post=lambda: c.prune_dry_run or not stale_users(c),
-        ),
-    ]
+    def pre() -> bool:
+        users = stale_users(c)
+        action.precheck_detail = f"would remove: {', '.join(users)}" if users else ""  # shown by --check
+        return not users
+
+    action = Func(
+        name="remove other login users",
+        run=lambda: _run(c),
+        pre=pre,
+        post=lambda: not stale_users(c),
+    )
+    return [action]

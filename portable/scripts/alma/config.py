@@ -23,9 +23,9 @@ class Config:
     static_gateway: str = ""  # empty = gateway of the current default route
     static_dns: str = ""      # space-separated
     static_iface: str = ""    # empty = interface of the current default route
-    prune_dry_run: bool = False
-    sudo_user: str = ""       # never pruned
     admin_pubkey: str = ""    # filled in by preflight
+    keymap: str = "jp106"     # console keymap (Japanese JIS); empty keeps the current one
+    sudo_user: str = ""       # never pruned
 
     # --- accounts ---
     admin_user: str = "devola"
@@ -51,12 +51,6 @@ class Config:
     nm_priority: int = 100  # above the stock profile (0) so this one wins
     static_apply_delay: str = "5s"
 
-    # --- attack surface ---
-    masked_services: tuple[str, ...] = ("cups", "avahi-daemon", "bluetooth")
-    # squashfs (snap, AppImage, container tooling) and udf (Azure and hypervisor config disks) are deliberately not listed
-    blacklisted_modules: tuple[str, ...] = ("usb-storage", "cramfs", "freevxfs", "hfs", "hfsplus", "jffs2")
-    shm_remount_opts: str = "noexec,nosuid,nodev"
-
     # --- authselect ---
     authselect_profile: str = "local"
     authselect_features: tuple[str, ...] = ("without-nullok", "with-faillock")
@@ -64,7 +58,7 @@ class Config:
     packages: tuple[str, ...] = (
         "curl", "wget", "git", "vim-enhanced", "htop", "tmux", "gcc", "make", "python3", "python3-pip",
         "qemu-guest-agent", "nftables", "dnf-automatic", "dnf-plugins-core", "audit", "audit-rules",
-        "chrony", "aide", "cronie", "at", "rsyslog", "logrotate",
+        "chrony", "cronie", "at", "rsyslog", "logrotate",
     )
 
     @classmethod
@@ -74,11 +68,10 @@ class Config:
         if not fqdn and hostname and domain:
             fqdn = f"{hostname.lower()}.{domain}"
         return cls(
-            hostname=hostname, domain=domain, fqdn=fqdn,
+            hostname=hostname, domain=domain, fqdn=fqdn, keymap=env.get("KEYMAP", "jp106"),
+            sudo_user=env.get("SUDO_USER", ""),
             static_ip=env.get("STATIC_IP", ""), static_gateway=env.get("STATIC_GATEWAY", ""),
             static_dns=env.get("STATIC_DNS", ""), static_iface=env.get("STATIC_IFACE", ""),
-            prune_dry_run=env.get("PRUNE_DRY_RUN", "0") == "1",
-            sudo_user=env.get("SUDO_USER", ""),
         )
 
     # --- derived: hostname ---
@@ -141,10 +134,6 @@ class Config:
     def service_sudoers_conf(self) -> str:
         return f"{self.sudoers_dir}/99-{MIDFIX}-{self.service_user}"
 
-    @property
-    def cron_allowed_users(self) -> tuple[str, str]:
-        return (self.admin_user, self.service_user)
-
     # su guard
     @property
     def su_guard_bin(self) -> str:
@@ -162,33 +151,8 @@ class Config:
     def su_guard_timer(self) -> str:
         return f"{MIDFIX}-su-guard.timer"
 
-    # logging
-    @property
-    def nft_log(self) -> str:
-        return f"/var/log/nftables-{MIDFIX}.log"
-
-    @property
-    def popola_log(self) -> str:
-        return f"/var/log/popola-switch-{MIDFIX}.log"
-
-    # AIDE / reboot-check
-    aide_db: str = "/var/lib/aide/aide.db.gz"
-    aide_db_new: str = "/var/lib/aide/aide.db.new.gz"
-    aide_log_dir: str = "/var/log/aide"
-    aide_drift_flag: str = "/var/lib/aide/drift-unreviewed"
-    aide_dnf_dropin_dir: str = "/etc/systemd/system/dnf-automatic.service.d"
-
-    @property
-    def aide_helper(self) -> str:
-        return f"/usr/local/sbin/{MIDFIX}-aide"
-
-    @property
-    def aide_log(self) -> str:
-        return f"{self.aide_log_dir}/check.log"
-
-    @property
-    def aide_tag(self) -> str:
-        return f"{MIDFIX}-aide"
+    # reboot-check
+    dnf_dropin_dir: str = "/etc/systemd/system/dnf-automatic.service.d"
 
     @property
     def reboot_notice_file(self) -> str:

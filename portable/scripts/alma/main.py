@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""AlmaLinux setup and hardening. Run as root (sudo); safe to re-run: steps already in place are skipped.
+"""AlmaLinux first-start setup: only what Ansible needs to take over. Run as root (sudo); safe to re-run: steps
+already in place are skipped. Hardening beyond this (kernel, attack surface, logs, AIDE) is left to Ansible.
 
     sudo SYSTEM_HOSTNAME=foo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 python3 alma-setup/main.py
     python3 alma-setup/main.py --list     # print the steps, change nothing
@@ -22,23 +23,23 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "shared")]
 
 from action import ActionError, run_actions  # noqa: E402
 from config import Config  # noqa: E402
-from sections import (aide, attack_surface, firewall, hostname, identity, kernel, logs, network,  # noqa: E402
-                      packages, preflight, prune, service_user, ssh, updates)
+from sections import (firewall, hostname, identity, keyboard, network, packages, preflight,  # noqa: E402
+                      prune, service_user, ssh, updates)
 
 
 def build(c: Config):
     """The full ordered step list. Constraints that must hold:
     - the admin key is installed (identity) before sshd is restarted (ssh)
+    - the service user's sudoers rule is granted from the admin, so it comes after identity
     - users are pruned only after admin and service users exist
-    - the AIDE baseline is built last, so the files above are part of it
     - static IP activation is the very last step: it drops SSH sessions on the old address
     """
     plan = [
-        ("hostname", hostname.actions), ("packages", packages.actions), ("updates", updates.actions),
-        ("kernel", kernel.actions), ("attack-surface", attack_surface.actions), ("identity", identity.actions),
-        ("ssh", ssh.actions), ("service-user", service_user.actions), ("prune", prune.actions),
-        ("logs", logs.actions), ("firewall", firewall.actions), ("network", network.write),
-        ("aide", aide.actions), ("network", network.activate),
+        ("hostname", hostname.actions), ("keyboard", keyboard.actions), ("packages", packages.actions),
+        ("updates", updates.actions),
+        ("identity", identity.actions), ("ssh", ssh.actions), ("service-user", service_user.actions),
+        ("prune", prune.actions), ("firewall", firewall.actions), ("network", network.write),
+        ("network", network.activate),
     ]
     actions = []
     for name, make in plan:
