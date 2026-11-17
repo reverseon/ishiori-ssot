@@ -1,0 +1,23 @@
+local-hostname: "YoRHa"
+hostname: "yorha.node.ishiori.net"
+cloud-name: "NoCloud-Local"
+platform: "nocloud"
+distro: "debian"
+distro-version: "13"
+distro-release: "Debian GNU/Linux 13 (trixie)"
+
+network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        name: "eth0"
+      dhcp4: true
+      routes:
+        - to: "default"
+          via: "192.168.0.1"
+      nameservers:
+        addresses:
+          - 192.168.0.1
+          - 8.8.8.8
+          - 8.8.4.4

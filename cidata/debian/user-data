@@ -1,0 +1,12 @@
+#cloud-config
+
+packages:
+  - curl
+
+users: []
+
+ssh_pwauth: false
+disable_root: true
+
+runcmd:
+  - 'echo "Cloud-init completed successfully!"'  
