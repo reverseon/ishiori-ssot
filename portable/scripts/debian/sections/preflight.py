@@ -9,6 +9,7 @@ from dataclasses import replace
 
 from actions import sh
 from config import Config
+from netcheck import check_static_network
 from pubkey import load_pubkey
 
 CIDR_RE = re.compile(r"^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$")
@@ -52,6 +53,7 @@ def resolve_network(c: Config) -> Config:
     gateway = c.static_gateway or _default_route("dev", iface).get("gateway", "")
     if not gateway:
         raise PreflightError(f"Could not detect the default gateway on {iface}, set STATIC_GATEWAY")
+    check_static_network(c.static_ip, iface, gateway, PreflightError)
     return replace(c, static_iface=iface, static_gateway=gateway)
 
 

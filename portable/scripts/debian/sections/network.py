@@ -27,10 +27,17 @@ def write(c: Config):
 
 
 def _active(c: Config) -> bool:
-    """The wanted address is configured on the interface."""
+    """The whole wanted config is live: address, default route via the gateway, and every DNS server on the link.
+    The address alone is not enough, it may come from another network manager (ifupdown) that sets no DNS."""
     addresses = json.loads(out("ip", "-j", "-4", "addr", "show", "dev", c.static_iface) or "[]")
     wanted = c.static_ip.split("/")[0]
-    return any(a.get("local") == wanted for entry in addresses for a in entry.get("addr_info", []))
+    if not any(a.get("local") == wanted for entry in addresses for a in entry.get("addr_info", [])):
+        return False
+    routes = json.loads(out("ip", "-j", "-4", "route", "show", "default", "dev", c.static_iface) or "[]")
+    if not any(r.get("gateway") == c.static_gateway for r in routes):
+        return False
+    live_dns = out("resolvectl", "dns", c.static_iface).partition(":")[2].split()
+    return all(d in live_dns for d in c.static_dns.split())
 
 
 def activate(c: Config):
