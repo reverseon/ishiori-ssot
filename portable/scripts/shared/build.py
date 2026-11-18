@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Bundle main.py plus its modules and ../shared into one file: ../build/debian-setup.py.
+"""Bundle <distro>/main.py plus its modules and ../shared into one file: ../build/<distro>-setup.py.
 
     pip install stickytape
-    python debian/build.py [output-path]
+    python shared/build.py alma|debian [output-path]
 """
 
 import subprocess
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-SHARED = HERE.parent / "shared"
-DEFAULT_OUT = HERE.parent / "build" / "debian-setup.py"
+SHARED = Path(__file__).resolve().parent
+ROOT = SHARED.parent
+DISTROS = ("alma", "debian")
 
 CALL = (
     "import sys; from stickytape.main import main; "
@@ -20,12 +20,17 @@ CALL = (
 
 
 def main() -> int:
-    out = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_OUT
+    if len(sys.argv) < 2 or sys.argv[1] not in DISTROS:
+        print(f"usage: build.py {{{'|'.join(DISTROS)}}} [output-path]", file=sys.stderr)
+        return 2
+    distro = sys.argv[1]
+    here = ROOT / distro
+    out = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else ROOT / "build" / f"{distro}-setup.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable, "-c", CALL,
-        str(HERE / "main.py"),
-        "--add-python-path", str(HERE),
+        str(here / "main.py"),
+        "--add-python-path", str(here),
         "--add-python-path", str(SHARED),
         "--output-file", str(out),
     ]
