@@ -54,8 +54,6 @@ def check_pubkey(key_text: str) -> None:
 def run(c: Config) -> Config:
     """Return the config with network values resolved and the validated admin public key loaded."""
     c = resolve_network(c)
-    if c.skip_admin_pubkey:
-        return c
     key_text = load_pubkey(c.admin_pubkey_url, c.admin_pubkey_file, PreflightError)
     check_pubkey(key_text)
     return replace(c, admin_pubkey=key_text)

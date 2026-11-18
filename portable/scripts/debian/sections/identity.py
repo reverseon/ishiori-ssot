@@ -139,13 +139,12 @@ def actions(c: Config):
             owner=c.admin_user,
             group=c.admin_user,
         ),
-    ]
-    if not c.skip_admin_pubkey:
-        result.append(WriteFile(
+        WriteFile(
             path=c.admin_authorized_keys,
             text=c.admin_pubkey,
             mode=0o600,
             owner=c.admin_user,
             group=c.admin_user,
-        ))
+        ),
+    ]
     return result
