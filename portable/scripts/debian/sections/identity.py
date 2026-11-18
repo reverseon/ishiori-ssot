@@ -41,7 +41,7 @@ def _faillock_in_pam() -> bool:
 
 
 def actions(c: Config):
-    return [
+    result = [
         WriteFile(
             path="/etc/motd",
             text=texts.motd(c),
@@ -139,11 +139,13 @@ def actions(c: Config):
             owner=c.admin_user,
             group=c.admin_user,
         ),
-        WriteFile(
+    ]
+    if not c.skip_admin_pubkey:
+        result.append(WriteFile(
             path=c.admin_authorized_keys,
             text=c.admin_pubkey,
             mode=0o600,
             owner=c.admin_user,
             group=c.admin_user,
-        ),
-    ]
+        ))
+    return result

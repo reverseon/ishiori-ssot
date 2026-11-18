@@ -24,6 +24,8 @@ class Config:
     static_dns: str = ""      # space-separated
     static_iface: str = ""    # empty = interface of the current default route
     admin_pubkey: str = ""    # filled in by preflight
+    admin_pubkey_file: str = ""  # local key file; when set, nothing is downloaded (works offline)
+    skip_admin_pubkey: bool = False  # no key is fetched or installed; sshd stays key-only, so log in on the console
     keymap: str = ""          # console keymap; empty keeps the current one (distro config sets the default)
     sudo_user: str = ""       # never pruned
 
@@ -58,7 +60,8 @@ class Config:
             fqdn = f"{hostname.lower()}.{domain}"
         return cls(
             hostname=hostname, domain=domain, fqdn=fqdn, keymap=env.get("KEYMAP", cls.keymap),
-            sudo_user=env.get("SUDO_USER", ""),
+            sudo_user=env.get("SUDO_USER", ""), admin_pubkey_file=env.get("ADMIN_PUBKEY_FILE", ""),
+            skip_admin_pubkey=env.get("SKIP_ADMIN_PUBKEY", "") in ("1", "true", "yes"),
             static_ip=env.get("STATIC_IP", ""), static_gateway=env.get("STATIC_GATEWAY", ""),
             static_dns=env.get("STATIC_DNS", ""), static_iface=env.get("STATIC_IFACE", ""),
         )

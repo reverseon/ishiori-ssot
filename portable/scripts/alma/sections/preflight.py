@@ -5,11 +5,11 @@ import os
 import re
 import subprocess
 import tempfile
-import urllib.request
 from dataclasses import replace
 
 from actions import sh
 from config import Config
+from pubkey import load_pubkey
 
 CIDR_RE = re.compile(r"^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$")
 
@@ -54,7 +54,8 @@ def check_pubkey(key_text: str) -> None:
 def run(c: Config) -> Config:
     """Return the config with network values resolved and the validated admin public key loaded."""
     c = resolve_network(c)
-    with urllib.request.urlopen(c.admin_pubkey_url, timeout=30) as response:  # downloaded now, installed later
-        key_text = response.read().decode("utf-8")
+    if c.skip_admin_pubkey:
+        return c
+    key_text = load_pubkey(c.admin_pubkey_url, c.admin_pubkey_file, PreflightError)
     check_pubkey(key_text)
     return replace(c, admin_pubkey=key_text)

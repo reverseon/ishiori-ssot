@@ -38,7 +38,7 @@ def _authselect_ok(c: Config) -> bool:
 
 
 def actions(c: Config):
-    return [
+    result = [
         WriteFile(
             path="/etc/motd",
             text=texts.motd(c),
@@ -129,12 +129,14 @@ def actions(c: Config):
             group=c.admin_user,
             relabel=True,
         ),
-        WriteFile(
+    ]
+    if not c.skip_admin_pubkey:
+        result.append(WriteFile(
             path=c.admin_authorized_keys,
             text=c.admin_pubkey,
             mode=0o600,
             owner=c.admin_user,
             group=c.admin_user,
             relabel=True,
-        ),
-    ]
+        ))
+    return result
