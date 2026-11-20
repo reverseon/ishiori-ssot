@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from base_config import MIDFIX, Config as BaseConfig  # noqa: F401  (MIDFIX is re-exported for the sections)
+from base_config import MIDFIX, Config as BaseConfig, env_help  # noqa: F401  (MIDFIX is re-exported for the sections)
+
+# Shown by `main.py --help`. Keep in step with the config fields and from_env in base_config.py.
+ENV_HELP = env_help("XKB layout (default: jp); empty keeps the current one")
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,11 @@ class Config(BaseConfig):
     def netplan_conf(self) -> str:
         # 90- sorts after cloud-init's 50-cloud-init.yaml, so these values win over the DHCP profile
         return f"/etc/netplan/90-{MIDFIX}-static.yaml"
+
+    @property
+    def netplan_dns_conf(self) -> str:
+        # 91- merges over 90- and the cloud-init profile: nameservers only, so the address config is left alone
+        return f"/etc/netplan/91-{MIDFIX}-dns.yaml"
 
     @property
     def keyboard_conf(self) -> str:

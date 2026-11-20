@@ -48,7 +48,7 @@ class Action(ABC):
     continue_on_error: bool = False
     #: Label shown in log lines; set by whoever assembles the action list.
     section: str = ""
-    #: A precheck() that returns False may set this to say what is off; it is logged and shown by --check.
+    #: A precheck() that returns False may set this to say what is off; it is logged and shown by the check run.
     precheck_detail: str = ""
     #: A postcheck() that returns False may set this to say why; it is appended to the failure message.
     postcheck_detail: str = ""

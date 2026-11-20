@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from base_config import MIDFIX, Config as BaseConfig  # noqa: F401  (MIDFIX is re-exported for the sections)
+from base_config import MIDFIX, Config as BaseConfig, env_help  # noqa: F401  (MIDFIX is re-exported for the sections)
+
+# Shown by `main.py --help`. Keep in step with the config fields and from_env in base_config.py.
+ENV_HELP = env_help("console keymap (default: jp106); empty keeps the current one")
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,7 @@ class Config(BaseConfig):
     admin_group: str = "wheel"
 
     # --- network ---
+    net_connection: str = ""  # NetworkManager connection on static_iface, for a DNS-only change
     nm_priority: int = 100  # above the stock profile (0) so this one wins
 
     # --- authselect ---

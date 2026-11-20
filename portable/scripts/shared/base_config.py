@@ -13,6 +13,23 @@ from dataclasses import dataclass
 MIDFIX = "from-setup"
 
 
+def env_help(keymap_line: str) -> str:
+    """The environment variables both distros read. Shown by `main.py --help`; keep in step with from_env."""
+    return f"""\
+environment (put them AFTER sudo, which resets the environment). Any value left unset keeps its current setting:
+  SYSTEM_HOSTNAME  short hostname; used for the /etc/hosts alias and to derive the FQDN
+  SYSTEM_DOMAIN    domain; with SYSTEM_HOSTNAME, derives the FQDN as <hostname>.<domain>
+  SYSTEM_FQDN      FQDN override (default: derived as above)
+  STATIC_IP        IPv4 CIDR, e.g. 192.168.1.50/24; makes the address static (default: current address)
+  STATIC_GATEWAY   IPv4 gateway; makes the address static (default: current default-route gateway)
+  STATIC_DNS       space-separated DNS servers (default: current). Alone, changes only DNS, address untouched
+  STATIC_IFACE     interface (default: interface of the current default route)
+  KEYMAP           {keymap_line}
+  ADMIN_PUBKEY_FILE  local file with the admin public key (ed25519); default: download it from GitHub
+  SUDO_USER        set by sudo, not by you: this account is removed too, once admin and service accounts are ready
+"""
+
+
 @dataclass(frozen=True)
 class Config:
     # --- run-time overrides (see from_env) ---
@@ -26,7 +43,10 @@ class Config:
     admin_pubkey: str = ""    # filled in by preflight
     admin_pubkey_file: str = ""  # local key file; when set, nothing is downloaded (works offline)
     keymap: str = ""          # console keymap; empty keeps the current one (distro config sets the default)
-    sudo_user: str = ""       # never pruned
+    sudo_user: str = ""       # account that ran sudo; pruned only once admin and service accounts are ready
+    # --- network change, decided by preflight.resolve_network; leave at the defaults ---
+    net_action: str = ""      # "" = no change, "dns" = DNS only (address untouched), "static" = write a static address
+    net_dhcp: bool = False    # the address on static_iface is DHCP-supplied, so DHCP DNS must be ignored
 
     # --- accounts ---
     admin_user: str = "devola"

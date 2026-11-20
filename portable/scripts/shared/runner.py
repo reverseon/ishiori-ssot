@@ -1,4 +1,5 @@
-"""Shared command-line runner for the distro setup scripts: logging, --list, --check, the root check, run_actions."""
+"""Shared command-line runner for the distro setup scripts: logging, --list, --exec (default: report), the root check,
+run_actions."""
 
 import argparse
 import logging
@@ -53,10 +54,10 @@ def setup_logging(name: str) -> Path | None:
     return path
 
 
-def run(c, check: bool, name: str, build, preflight_run) -> int:
+def run(c, execute: bool, name: str, build, preflight_run) -> int:
     c = preflight_run(c)
     actions = build(c)
-    if check:
+    if not execute:
         for a in actions:
             done = a.precheck()
             why = f"  ({a.precheck_detail})" if not done and a.precheck_detail else ""
@@ -71,12 +72,14 @@ def run(c, check: bool, name: str, build, preflight_run) -> int:
     return 0
 
 
-def main(name: str, doc: str, config_cls, build, preflight_run, argv=None) -> int:
-    """Shared CLI: --list / --check / run. `build(c)` returns the ordered actions, each tagged with .section."""
-    parser = argparse.ArgumentParser(description=doc, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(name: str, doc: str, config_cls, build, preflight_run, argv=None, epilog: str = "") -> int:
+    """Shared CLI: --list, --exec, and by default a report of what --exec would do. `build(c)` returns the ordered
+    actions, each tagged with .section. `epilog` is shown by --help (the environment variables)."""
+    parser = argparse.ArgumentParser(description=doc, epilog=epilog,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--list", action="store_true", help="print the steps and exit")
-    mode.add_argument("--check", action="store_true", help="report which steps would run, change nothing")
+    mode.add_argument("--exec", action="store_true", help="apply the changes (default: report which steps would run)")
     args = parser.parse_args(argv)
 
     c = config_cls.from_env()
@@ -89,7 +92,7 @@ def main(name: str, doc: str, config_cls, build, preflight_run, argv=None) -> in
         return 1
     log_path = setup_logging(name)
     try:
-        return run(c, args.check, name, build, preflight_run)
+        return run(c, args.exec, name, build, preflight_run)
     finally:
         if log_path:
             logging.info("log saved to: %s", log_path)

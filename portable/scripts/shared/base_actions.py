@@ -79,13 +79,18 @@ class Func(Action):
 
 
 class Cmd(Action):
-    """Run a command. `done` (if given) says whether the desired state holds, before and after."""
+    """Run a command. `done` (if given) says whether the desired state holds, before and after.
+
+    verify_after_run=False keeps the precheck but skips the postcheck: for a command whose effect lands after it
+    returns (a delayed activation), so the postcheck would always fail. The action then ends UNVERIFIED.
+    """
 
     def __init__(self, name: str, argv: Sequence[str], done: Check | None = None, input: str | None = None,
-                 continue_on_error: bool = False):
+                 continue_on_error: bool = False, verify_after_run: bool = True):
         super().__init__(name)
         self.argv, self.done, self.input = list(argv), done, input
         self.continue_on_error = continue_on_error
+        self.verify_after_run = verify_after_run
 
     def precheck(self) -> bool:
         return self.done() if self.done else False
@@ -94,7 +99,7 @@ class Cmd(Action):
         sh(*self.argv, input=self.input)
 
     def verifiable(self) -> bool:
-        return self.done is not None
+        return self.done is not None and self.verify_after_run
 
     def postcheck(self) -> bool:
         return self.done() if self.done else True

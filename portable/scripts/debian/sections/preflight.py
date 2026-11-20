@@ -1,18 +1,14 @@
 """Every input check runs here, before the first change to the system, so a bad value aborts a clean run."""
 
-import json
 import os
-import re
 import subprocess
 import tempfile
 from dataclasses import replace
 
-from actions import sh
+import netcheck
+from actions import out
 from config import Config
-from netcheck import check_static_network
 from pubkey import load_pubkey
-
-CIDR_RE = re.compile(r"^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$")
 
 
 class PreflightError(RuntimeError):
@@ -36,25 +32,14 @@ def check_os(path: str = "/etc/os-release") -> None:
             f"This script targets Debian 13, found {fields.get('PRETTY_NAME') or fields.get('ID') or 'unknown'}")
 
 
-def _default_route(*extra: str) -> dict:
-    routes = json.loads(sh("ip", "-j", "-4", "route", "show", "default", *extra).stdout or "[]")
-    return routes[0] if routes else {}
+def live_dns(iface: str) -> list[str]:
+    """resolvectl prints 'Link N (iface): server server'; no servers gives an empty list."""
+    _, _, servers = out("resolvectl", "dns", iface).partition(":")
+    return servers.split()
 
 
 def resolve_network(c: Config) -> Config:
-    """Validate STATIC_IP and fill in the interface and gateway of the current default route when unset."""
-    if not c.static_ip:
-        return c
-    if not CIDR_RE.match(c.static_ip):
-        raise PreflightError(f"STATIC_IP must be IPv4 CIDR (e.g. 192.168.1.50/24), got: {c.static_ip}")
-    iface = c.static_iface or _default_route().get("dev", "")
-    if not iface:
-        raise PreflightError("Could not detect the default-route interface, set STATIC_IFACE")
-    gateway = c.static_gateway or _default_route("dev", iface).get("gateway", "")
-    if not gateway:
-        raise PreflightError(f"Could not detect the default gateway on {iface}, set STATIC_GATEWAY")
-    check_static_network(c.static_ip, iface, gateway, PreflightError)
-    return replace(c, static_iface=iface, static_gateway=gateway)
+    return netcheck.resolve_network(c, live_dns, PreflightError)
 
 
 def check_pubkey(key_text: str) -> None:

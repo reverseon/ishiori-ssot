@@ -2,9 +2,10 @@
 """AlmaLinux first-start setup: only what Ansible needs to take over. Run as root (sudo); safe to re-run: steps
 already in place are skipped. Hardening beyond this (kernel, attack surface, logs, AIDE) is left to Ansible.
 
-    sudo SYSTEM_HOSTNAME=foo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 python3 alma-setup/main.py
-    python3 alma-setup/main.py --list     # print the steps, change nothing
-    sudo python3 alma-setup/main.py --check   # report which steps would run, change nothing
+    sudo python3 alma-setup/main.py          # report which steps would run, change nothing
+    sudo SYSTEM_HOSTNAME=foo STATIC_IP=192.168.1.50/24 STATIC_GATEWAY=192.168.1.1 python3 alma-setup/main.py --exec
+    python3 alma-setup/main.py --list        # print the steps, change nothing
+    python3 alma-setup/main.py --help        # the environment variables
 
 Settings and the environment variables they read: config.py. Step order below matters.
 """
@@ -16,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "shared")]
 
 import runner  # noqa: E402
-from config import Config  # noqa: E402
+from config import ENV_HELP, Config  # noqa: E402
 from common_sections import hostname, service_user  # noqa: E402
 from sections import (firewall, identity, keyboard, network, packages, preflight,  # noqa: E402
                       prune, ssh, updates)
@@ -40,7 +41,7 @@ def build(c: Config):
 
 
 def main(argv=None) -> int:
-    return runner.main("alma-setup", __doc__, Config, build, preflight.run, argv)
+    return runner.main("alma-setup", __doc__, Config, build, preflight.run, argv, epilog=ENV_HELP)
 
 
 if __name__ == "__main__":

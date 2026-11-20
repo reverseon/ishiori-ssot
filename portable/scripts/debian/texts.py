@@ -85,8 +85,7 @@ flush ruleset
 # ---- network ---------------------------------------------------------------------------------------
 
 def netplan_yaml(c: Config) -> str:
-    dns = [d for d in c.static_dns.split() if d]
-    nameservers = f"      nameservers:\n        addresses: [{', '.join(dns)}]\n" if dns else ""
+    """Static address (90-). DNS lives in netplan_dns_yaml so one file owns it in every mode."""
     return f"""\
 network:
   version: 2
@@ -97,7 +96,21 @@ network:
       routes:
         - to: default
           via: {c.static_gateway}
-{nameservers}"""
+"""
+
+
+def netplan_dns_yaml(c: Config) -> str:
+    """Nameservers (91-), merged over the address config. With a DHCP address, DHCP-supplied DNS is switched off
+    so only the wanted servers are used."""
+    dns = [d for d in c.static_dns.split() if d]
+    if not dns and not c.net_dhcp:
+        return "network:\n  version: 2\n"
+    lines = ["network:", "  version: 2", "  ethernets:", f"    {c.static_iface}:"]
+    if c.net_dhcp:
+        lines += ["      dhcp4-overrides:", "        use-dns: false"]
+    if dns:
+        lines += ["      nameservers:", f"        addresses: [{', '.join(dns)}]"]
+    return "\n".join(lines) + "\n"
 
 
 # ---- reboot notice ---------------------------------------------------------------------------------
