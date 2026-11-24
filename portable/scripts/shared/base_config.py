@@ -8,9 +8,13 @@ Everything else is plain configuration: edit it in place.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 
 MIDFIX = "from-setup"
+
+_UNUSABLE_HOSTNAMES = {"", "localhost", "localhost.localdomain", "(none)"}
+_HOST_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def env_help(keymap_line: str) -> str:
@@ -18,7 +22,8 @@ def env_help(keymap_line: str) -> str:
     return f"""\
 environment (put them AFTER sudo, which resets the environment). Any value left unset keeps its current setting:
   SYSTEM_HOSTNAME  short hostname; used for the /etc/hosts alias and to derive the FQDN
-  SYSTEM_DOMAIN    domain; with SYSTEM_HOSTNAME, derives the FQDN as <hostname>.<domain>
+  SYSTEM_DOMAIN    domain; derives the FQDN as <hostname>.<domain>, using the current short hostname if
+                   SYSTEM_HOSTNAME is not set
   SYSTEM_FQDN      FQDN override (default: derived as above)
   STATIC_IP        IPv4 CIDR, e.g. 192.168.1.50/24; makes the address static (default: current address)
   STATIC_GATEWAY   IPv4 gateway; makes the address static (default: current default-route gateway)
@@ -28,6 +33,22 @@ environment (put them AFTER sudo, which resets the environment). Any value left 
   ADMIN_PUBKEY_FILE  local file with the admin public key (ed25519); default: download it from GitHub
   SUDO_USER        set by sudo, not by you: this account is removed too, once admin and service accounts are ready
 """
+
+
+def infer_hostname(c: "Config", current: str, error_cls: type = ValueError) -> "Config":
+    """SYSTEM_DOMAIN without SYSTEM_HOSTNAME: keep the machine's current short name and add the domain to it.
+
+    `current` is the machine's hostname as the OS reports it. A generic name (localhost, empty) would be baked into
+    the FQDN, so it is refused and the caller is asked for SYSTEM_HOSTNAME.
+    """
+    if c.hostname or not c.domain or c.fqdn:
+        return c
+    short = current.partition(".")[0].lower()
+    if short in _UNUSABLE_HOSTNAMES or not _HOST_LABEL.match(short):
+        raise error_cls(
+            f"SYSTEM_DOMAIN is set but the machine's current hostname {current!r} cannot be used for it; "
+            "set SYSTEM_HOSTNAME")
+    return replace(c, hostname=short, fqdn=f"{short}.{c.domain}")
 
 
 @dataclass(frozen=True)

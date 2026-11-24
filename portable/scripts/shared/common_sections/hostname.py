@@ -1,4 +1,5 @@
-"""Hostname and self-resolution. Nothing changes unless SYSTEM_HOSTNAME/DOMAIN/FQDN is set."""
+"""Hostname and self-resolution. Nothing changes unless a hostname is known: SYSTEM_HOSTNAME or SYSTEM_FQDN, or
+SYSTEM_DOMAIN alone, which takes the current short hostname (see base_config.infer_hostname)."""
 
 from actions import Cmd, EnsureLine, out
 from config import Config
