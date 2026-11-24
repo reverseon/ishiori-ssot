@@ -58,10 +58,15 @@ def run(c, execute: bool, name: str, build, preflight_run) -> int:
     c = preflight_run(c)
     actions = build(c)
     if not execute:
+        logging.info("DRY RUN: nothing will be changed. ok = already in place, RUN = would change. "
+                     "Apply with --exec.")
+        would_run = 0
         for a in actions:
             done = a.precheck()
             why = f"  ({a.precheck_detail})" if not done and a.precheck_detail else ""
             logging.info("%s [%s] %s%s", "ok  " if done else "RUN ", a.section, a.name, why)
+            would_run += not done
+        logging.info("DRY RUN: %d of %d steps would run; nothing was changed.", would_run, len(actions))
         return 0
     try:
         run_actions(actions)
